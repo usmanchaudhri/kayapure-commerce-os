@@ -31,6 +31,11 @@ class MCPClient:
     Lightweight MCP client that communicates with MCP servers over
     Streamable HTTP transport (JSON-RPC 2.0 over HTTP POST).
 
+    The server_url is used directly as the POST endpoint — no path suffix
+    is appended. For example:
+        server_url = "https://mcp.pipeboard.co/meta-ads-mcp"
+        POST → https://mcp.pipeboard.co/meta-ads-mcp
+
     This avoids the heavyweight langchain-mcp-adapters dependency for
     Approach B, where we only need to call specific tools directly.
     When upgrading to Approach A (tools injected into LangGraph), switch
@@ -38,6 +43,7 @@ class MCPClient:
     """
 
     def __init__(self, server_url: str, auth_token: Optional[str] = None):
+        # Use the server_url as-is — it IS the endpoint. Do NOT append /mcp.
         self._server_url = server_url.rstrip("/")
         self._auth_token = auth_token
         self._session_id: Optional[str] = None
@@ -45,6 +51,7 @@ class MCPClient:
         self._request_id = 0
         self._initialized = False
         self._available_tools: List[Dict[str, Any]] = []
+        self._server_info: Optional[Dict[str, Any]] = None
 
     def _build_headers(self) -> Dict[str, str]:
         """Build HTTP headers for MCP requests."""
@@ -72,6 +79,7 @@ class MCPClient:
     async def _send_jsonrpc(self, method: str, params: Optional[Dict] = None) -> Any:
         """
         Send a JSON-RPC 2.0 request to the MCP server.
+        Posts directly to self._server_url (no path suffix appended).
         Handles both direct JSON responses and SSE (Server-Sent Events) streams.
         """
         client = await self._get_client()
@@ -83,17 +91,25 @@ class MCPClient:
         if params is not None:
             payload["params"] = params
 
-        logger.debug(f"MCP request: {method} -> {json.dumps(params or {})[:200]}")
+        logger.info(f"MCP request: {method} -> {self._server_url}")
+        logger.debug(f"MCP payload: {json.dumps(payload)[:300]}")
 
         response = await client.post(
-            f"{self._server_url}/mcp",
+            self._server_url,
             json=payload,
             headers=self._build_headers(),
         )
 
-        # Capture session ID from response headers
+        logger.debug(
+            f"MCP response: status={response.status_code}, "
+            f"content-type={response.headers.get('content-type', 'unknown')}, "
+            f"body={response.text[:300]}"
+        )
+
+        # Capture session ID from response headers if provided
         if "mcp-session-id" in response.headers:
             self._session_id = response.headers["mcp-session-id"]
+            logger.debug(f"MCP session ID captured: {self._session_id}")
 
         content_type = response.headers.get("content-type", "")
 
@@ -109,15 +125,21 @@ class MCPClient:
             return self._parse_sse_response(response.text)
 
         # Handle direct JSON response
+        if not response.text.strip():
+            logger.warning(f"MCP server returned empty body for method '{method}'")
+            return {}
+
         result = response.json()
+
+        # Handle batch responses (array of JSON-RPC results)
         if isinstance(result, list):
-            # Batch response — return the last result
             result = result[-1] if result else {}
 
-        if "error" in result:
+        if isinstance(result, dict) and "error" in result:
             error = result["error"]
             raise MCPToolError(
-                f"MCP tool error [{error.get('code', 'unknown')}]: {error.get('message', 'Unknown error')}"
+                f"MCP tool error [{error.get('code', 'unknown')}]: "
+                f"{error.get('message', 'Unknown error')}"
             )
 
         return result.get("result", result)
@@ -141,7 +163,8 @@ class MCPClient:
         if "error" in last_data:
             error = last_data["error"]
             raise MCPToolError(
-                f"MCP tool error [{error.get('code', 'unknown')}]: {error.get('message', 'Unknown error')}"
+                f"MCP tool error [{error.get('code', 'unknown')}]: "
+                f"{error.get('message', 'Unknown error')}"
             )
 
         return last_data.get("result", last_data)
@@ -150,6 +173,10 @@ class MCPClient:
         """
         Initialize the MCP session by sending the 'initialize' handshake
         followed by 'notifications/initialized'.
+
+        Some MCP servers (like Pipeboard) are stateless and don't strictly
+        require initialization, but we send it anyway for protocol compliance.
+        If the server returns an empty result, we log a warning and proceed.
         """
         if self._initialized:
             return
@@ -164,19 +191,38 @@ class MCPClient:
                     "version": "1.0.0",
                 },
             })
-            logger.info(f"MCP session initialized: {json.dumps(init_result)[:200]}")
 
-            # Step 2: Send initialized notification
-            client = await self._get_client()
-            notification = {
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-            }
-            await client.post(
-                f"{self._server_url}/mcp",
-                json=notification,
-                headers=self._build_headers(),
-            )
+            if init_result:
+                self._server_info = init_result
+                server_name = init_result.get("serverInfo", {}).get("name", "unknown")
+                server_version = init_result.get("serverInfo", {}).get("version", "unknown")
+                protocol = init_result.get("protocolVersion", "unknown")
+                logger.info(
+                    f"MCP handshake success: server={server_name} v{server_version}, "
+                    f"protocol={protocol}"
+                )
+            else:
+                logger.warning(
+                    "MCP initialize returned empty result — server may be stateless. "
+                    "Proceeding without session."
+                )
+
+            # Step 2: Send initialized notification (fire-and-forget)
+            try:
+                client = await self._get_client()
+                notification = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                }
+                await client.post(
+                    self._server_url,
+                    json=notification,
+                    headers=self._build_headers(),
+                )
+                logger.debug("Sent notifications/initialized")
+            except Exception as e:
+                # Non-fatal — some servers don't handle this notification
+                logger.debug(f"notifications/initialized failed (non-fatal): {e}")
 
             self._initialized = True
             logger.info("MCP client fully initialized and ready")
@@ -197,7 +243,7 @@ class MCPClient:
     async def call_tool(self, tool_name: str, arguments: Optional[Dict] = None) -> Any:
         """
         Call a specific MCP tool by name with the given arguments.
-        Returns the tool's result content.
+        Returns the tool's result content, parsed as JSON if possible.
         """
         await self.initialize()
 

@@ -148,7 +148,7 @@ class MarketingService:
 
         try:
             result = await self._mcp_client.call_tool(
-                "mcp_meta_ads_get_campaigns",
+                "get_campaigns",
                 {"account_id": self._meta_account_id},
             )
             return self._normalize_campaigns_response(result)
@@ -174,7 +174,7 @@ class MarketingService:
 
         try:
             result = await self._mcp_client.call_tool(
-                "mcp_meta_ads_get_insights",
+                "get_insights",
                 {
                     "object_id": campaign_id,
                     "time_range": time_range,
@@ -194,7 +194,7 @@ class MarketingService:
 
         try:
             result = await self._mcp_client.call_tool(
-                "mcp_meta_ads_get_adsets",
+                "get_adsets",
                 {"campaign_id": campaign_id},
             )
             return result if isinstance(result, list) else [result]
@@ -211,7 +211,7 @@ class MarketingService:
 
         try:
             result = await self._mcp_client.call_tool(
-                "mcp_meta_ads_update_adset",
+                "update_adset",
                 {"adset_id": adset_id, **updates},
             )
             return {"success": True, "result": result}
@@ -235,7 +235,7 @@ class MarketingService:
 
         # Step 1: Get account-level insights for total spend
         account_insights = await self._mcp_client.call_tool(
-            "mcp_meta_ads_get_insights",
+            "get_insights",
             {
                 "object_id": self._meta_account_id,
                 "time_range": {"since": date_str, "until": date_str},
@@ -246,7 +246,7 @@ class MarketingService:
 
         # Step 2: Get campaign-level breakdown
         campaign_insights = await self._mcp_client.call_tool(
-            "mcp_meta_ads_get_insights",
+            "get_insights",
             {
                 "object_id": self._meta_account_id,
                 "time_range": {"since": date_str, "until": date_str},
@@ -345,7 +345,7 @@ class MarketingService:
         """
         # Get ad sets for this campaign
         adsets = await self._mcp_client.call_tool(
-            "mcp_meta_ads_get_adsets",
+            "get_adsets",
             {"campaign_id": campaign_id},
         )
 
@@ -359,7 +359,7 @@ class MarketingService:
 
             old_budget = self._safe_float(adset.get("daily_budget", 0)) / 100  # Meta returns in cents
             result = await self._mcp_client.call_tool(
-                "mcp_meta_ads_update_adset",
+                "update_adset",
                 {
                     "adset_id": str(adset_id),
                     "daily_budget": int(new_budget * 100),  # Meta expects cents
