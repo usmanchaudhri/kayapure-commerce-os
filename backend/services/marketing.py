@@ -12,12 +12,14 @@ the service falls back to mock data so the system remains functional during
 development and testing.
 """
 
-import logging
 import random
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("kayapure.marketing")
+from utils.logging_config import get_logger
+
+logger = get_logger("marketing")
 
 
 class MarketingService:
@@ -89,7 +91,10 @@ class MarketingService:
         self._meta_account_id = meta_account_id
         self._use_mcp = mcp_client is not None and meta_account_id is not None
         mode = "MCP (live Meta Ads)" if self._use_mcp else "MOCK (fallback data)"
-        logger.info(f"MarketingService configured in {mode} mode")
+        logger.info(
+            f"MarketingService configured in {mode} mode",
+            extra={"mode": mode, "account_id": meta_account_id or "none"},
+        )
 
     # ================================================================
     # Primary Interface — called by workflow.py sensor_node and main.py
@@ -100,14 +105,38 @@ class MarketingService:
         Get total ad spend across all platforms.
         Interface is identical to the original mock version.
         """
+        start_time = time.perf_counter()
         if self._use_mcp:
             try:
-                return await self._mcp_get_ad_spend_summary(date)
+                result = await self._mcp_get_ad_spend_summary(date)
+                elapsed = (time.perf_counter() - start_time) * 1000
+                logger.info(
+                    f"Ad spend summary fetched via MCP in {elapsed:.1f}ms: "
+                    f"${result.get('total_spend', 0):.2f} total spend, "
+                    f"{len(result.get('campaigns', []))} campaigns",
+                    extra={
+                        "source": "mcp",
+                        "total_spend": result.get("total_spend", 0),
+                        "campaign_count": len(result.get("campaigns", [])),
+                        "duration_ms": round(elapsed, 1),
+                    },
+                )
+                return result
             except Exception as e:
-                logger.warning(f"MCP call failed, falling back to mock: {e}")
+                elapsed = (time.perf_counter() - start_time) * 1000
+                logger.warning(
+                    f"MCP call failed after {elapsed:.1f}ms, falling back to mock: {e}",
+                    extra={"error": str(e), "duration_ms": round(elapsed, 1), "fallback": True},
+                )
                 return await self._mock_get_ad_spend_summary(date)
         else:
-            return await self._mock_get_ad_spend_summary(date)
+            result = await self._mock_get_ad_spend_summary(date)
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                f"Ad spend summary fetched via MOCK in {elapsed:.1f}ms",
+                extra={"source": "mock", "duration_ms": round(elapsed, 1)},
+            )
+            return result
 
     async def adjust_campaign_budget(
         self, campaign_id: str, new_budget: float

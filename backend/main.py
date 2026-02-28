@@ -46,6 +46,21 @@ from services.logistics import logistics_service
 from services.mcp_client import mcp_manager
 from graph.workflow import commerce_graph, firecracker_executor_node, CommerceState
 
+# ============================================
+# Initialize Structured Logging & LangSmith
+# ============================================
+from utils.logging_config import setup_logging, setup_langsmith_tracing, get_logger, set_correlation_id
+from utils.api_middleware import RequestLoggingMiddleware
+
+# Initialize logging FIRST — before any other logger is used
+setup_logging(log_dir="logs")
+
+# Setup LangSmith tracing (no-op if LANGSMITH_API_KEY not set)
+langsmith_enabled = setup_langsmith_tracing()
+
+logger = get_logger("api")
+startup_logger = get_logger("startup")
+
 
 # ============================================
 # WebSocket Connection Manager
@@ -59,10 +74,12 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        logger.info(f"WebSocket client connected (total: {len(self.active_connections)})")
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        logger.info(f"WebSocket client disconnected (total: {len(self.active_connections)})")
 
     async def broadcast(self, message: dict):
         disconnected = []
@@ -84,8 +101,12 @@ ws_manager = ConnectionManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
-    import logging
-    logger = logging.getLogger("kayapure.startup")
+    startup_logger.info("=" * 60)
+    startup_logger.info("KayaPure Commerce OS starting up...")
+    startup_logger.info(f"LangSmith tracing: {'ENABLED' if langsmith_enabled else 'DISABLED'}")
+    startup_logger.info(f"MCP enabled: {settings.MCP_ENABLED}")
+    startup_logger.info(f"Firecracker mock: {settings.FIRECRACKER_MOCK}")
+    startup_logger.info("=" * 60)
 
     # Register VM telemetry callback
     async def telemetry_callback(event_type: str, data: dict):
@@ -99,17 +120,21 @@ async def lifespan(app: FastAPI):
 
     # Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
+    startup_logger.info("Database tables verified")
 
     # Initialize MCP connections
     if settings.mcp_meta_ads_ready:
-        logger.info("MCP enabled — connecting to Meta Ads MCP server...")
+        startup_logger.info("MCP enabled — connecting to Meta Ads MCP server...")
         mcp_manager.register_server(
             name="meta-ads",
             server_url=settings.MCP_META_ADS_URL,
             auth_token=settings.MCP_META_ADS_TOKEN,
         )
         init_results = await mcp_manager.initialize_all()
-        logger.info(f"MCP initialization results: {init_results}")
+        startup_logger.info(
+            f"MCP initialization results: {init_results}",
+            extra={"mcp_init_results": init_results},
+        )
 
         # Configure marketing service with MCP client
         if init_results.get("meta-ads"):
@@ -117,16 +142,20 @@ async def lifespan(app: FastAPI):
                 mcp_client=mcp_manager.meta_ads,
                 meta_account_id=settings.META_ADS_ACCOUNT_ID,
             )
-            logger.info("MarketingService configured with live Meta Ads MCP")
+            startup_logger.info("MarketingService configured with live Meta Ads MCP")
         else:
-            logger.warning("Meta Ads MCP init failed — MarketingService using mock data")
+            startup_logger.warning("Meta Ads MCP init failed — MarketingService using mock data")
     else:
-        logger.info("MCP disabled or not configured — MarketingService using mock data")
+        startup_logger.info("MCP disabled or not configured — MarketingService using mock data")
+
+    startup_logger.info("KayaPure Commerce OS ready to serve requests")
 
     yield
 
     # Shutdown: close MCP connections
+    startup_logger.info("Shutting down — closing MCP connections...")
     await mcp_manager.close_all()
+    startup_logger.info("Shutdown complete")
 
 
 # ============================================
@@ -139,12 +168,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add request logging middleware (must be added before CORS)
+app.add_middleware(RequestLoggingMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Correlation-ID"],
 )
 
 
@@ -157,6 +190,8 @@ async def health_check():
         "status": "healthy",
         "service": "KayaPure Commerce OS",
         "version": "1.0.0",
+        "langsmith_tracing": langsmith_enabled,
+        "mcp_enabled": settings.MCP_ENABLED,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -189,7 +224,74 @@ async def mcp_status():
             "tools_available": len(meta_ads_tools) if isinstance(meta_ads_tools, list) and not (meta_ads_tools and "error" in meta_ads_tools[0]) else 0,
         },
         "marketing_service_mode": "mcp" if marketing_service._use_mcp else "mock",
+        "langsmith_tracing": langsmith_enabled,
         "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+# ============================================
+# Logs Endpoint — view structured logs from the dashboard
+# ============================================
+@app.get("/api/logs")
+async def get_logs(
+    component: Optional[str] = Query(default=None, description="Filter by component: mcp, agent, api"),
+    level: Optional[str] = Query(default=None, description="Filter by level: DEBUG, INFO, WARNING, ERROR"),
+    limit: int = Query(default=100, le=1000),
+    correlation_id: Optional[str] = Query(default=None, description="Filter by correlation ID"),
+):
+    """
+    Read structured JSON logs from the log files.
+    Useful for debugging from the dashboard without SSH access.
+    """
+    import os
+
+    # Map component to log file
+    file_map = {
+        "mcp": "logs/mcp.log",
+        "agent": "logs/agent.log",
+        "api": "logs/api.log",
+        None: "logs/kayapure.log",
+    }
+
+    log_file = file_map.get(component, "logs/kayapure.log")
+
+    if not os.path.exists(log_file):
+        return {"logs": [], "file": log_file, "message": "Log file not found"}
+
+    logs = []
+    try:
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+
+        # Read from the end (newest first)
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+
+                # Apply filters
+                if level and entry.get("level") != level.upper():
+                    continue
+                if correlation_id and entry.get("correlation_id") != correlation_id:
+                    continue
+
+                logs.append(entry)
+
+                if len(logs) >= limit:
+                    break
+            except json.JSONDecodeError:
+                continue
+
+    except Exception as e:
+        return {"logs": [], "file": log_file, "error": str(e)}
+
+    return {
+        "logs": logs,
+        "file": log_file,
+        "count": len(logs),
+        "total_lines": len(lines) if 'lines' in dir() else 0,
     }
 
 
@@ -318,6 +420,12 @@ def get_action(action_id: int, db: Session = Depends(get_db)):
 @app.post("/api/actions/{action_id}/decide")
 async def decide_action(action_id: int, decision: ActionApproval, db: Session = Depends(get_db)):
     """Approve or deny an action proposal. Triggers Firecracker execution on approval."""
+    action_logger = get_logger("agent")
+    action_logger.info(
+        f"Action decision received: action_id={action_id}, decision={decision.action}",
+        extra={"action_id": action_id, "decision": decision.action},
+    )
+
     action = db.query(ActionProposal).filter(ActionProposal.id == action_id).first()
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
@@ -327,6 +435,7 @@ async def decide_action(action_id: int, decision: ActionApproval, db: Session = 
     if decision.action == "deny":
         action.status = ActionStatus.DENIED
         db.commit()
+        action_logger.info(f"Action {action_id} DENIED", extra={"action_id": action_id})
         await ws_manager.broadcast({
             "type": "action_update",
             "data": {"id": action.id, "status": "denied", "comment": decision.comment},
@@ -336,6 +445,10 @@ async def decide_action(action_id: int, decision: ActionApproval, db: Session = 
     # Approve and execute
     action.status = ActionStatus.EXECUTING
     db.commit()
+    action_logger.info(
+        f"Action {action_id} APPROVED — executing in Firecracker",
+        extra={"action_id": action_id, "action_type": action.action_type},
+    )
 
     await ws_manager.broadcast({
         "type": "action_update",
@@ -387,6 +500,16 @@ async def decide_action(action_id: int, decision: ActionApproval, db: Session = 
         action.vm_session_id = vm_session_id
         db.commit()
 
+        action_logger.info(
+            f"Action {action_id} execution {'COMPLETED' if execution_result.get('success') else 'FAILED'}",
+            extra={
+                "action_id": action_id,
+                "vm_session_id": vm_session_id,
+                "success": execution_result.get("success"),
+                "boot_time_ms": execution_result.get("boot_time_ms"),
+            },
+        )
+
         # Broadcast logs
         for log in result_state.get("agent_logs", []):
             await ws_manager.broadcast({"type": "agent_log", "data": log})
@@ -410,6 +533,11 @@ async def decide_action(action_id: int, decision: ActionApproval, db: Session = 
         action.status = ActionStatus.FAILED
         action.result = {"error": str(e)}
         db.commit()
+        action_logger.error(
+            f"Action {action_id} execution FAILED: {e}",
+            extra={"action_id": action_id, "error": str(e)},
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -422,7 +550,14 @@ async def run_agent_cycle(db: Session = Depends(get_db)):
     Trigger a full agent cycle: sensor -> P&L -> strategy -> proposals.
     Returns the proposed actions for the Action Queue.
     """
+    workflow_logger = get_logger("workflow")
     thread_id = str(uuid.uuid4())
+    cid = set_correlation_id(f"cycle-{thread_id[:8]}")
+
+    workflow_logger.info(
+        f"Agent cycle STARTED (thread: {thread_id[:8]})",
+        extra={"thread_id": thread_id, "correlation_id": cid},
+    )
 
     await ws_manager.broadcast({
         "type": "agent_log",
@@ -505,6 +640,18 @@ async def run_agent_cycle(db: Session = Depends(get_db)):
             db.add(metric)
             db.commit()
 
+        workflow_logger.info(
+            f"Agent cycle COMPLETED — {len(saved_actions)} actions proposed",
+            extra={
+                "thread_id": thread_id,
+                "actions_proposed": len(saved_actions),
+                "pnl_revenue": pnl.get("total_revenue"),
+                "pnl_net_profit": pnl.get("net_profit"),
+                "pnl_margin": pnl.get("contribution_margin"),
+                "errors": result.get("errors", []),
+            },
+        )
+
         return {
             "thread_id": thread_id,
             "pnl_summary": result.get("pnl_summary"),
@@ -515,6 +662,11 @@ async def run_agent_cycle(db: Session = Depends(get_db)):
         }
 
     except Exception as e:
+        workflow_logger.error(
+            f"Agent cycle FAILED: {e}",
+            extra={"thread_id": thread_id, "error": str(e)},
+            exc_info=True,
+        )
         await ws_manager.broadcast({
             "type": "agent_log",
             "data": {
@@ -574,6 +726,12 @@ async def generate_protocol(request: HealthGoalRequest):
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    diag_logger = get_logger("agent")
+    diag_logger.info(
+        f"Protocol generation requested: goals={request.goals}",
+        extra={"goals": request.goals, "age": request.age, "gender": request.gender},
+    )
+
     try:
         llm = ChatOpenAI(model=settings.STRATEGY_MODEL, temperature=0.4)
 
@@ -624,9 +782,14 @@ Respond in this exact JSON format:
                 response_text = response_text[4:]
 
         protocol_data = json.loads(response_text)
+        diag_logger.info(
+            f"Protocol generated: {protocol_data.get('protocol_name', 'unknown')}",
+            extra={"protocol_name": protocol_data.get("protocol_name")},
+        )
         return ProtocolResponse(**protocol_data)
 
     except json.JSONDecodeError:
+        diag_logger.warning("LLM returned invalid JSON — using fallback protocol")
         # Fallback protocol
         return ProtocolResponse(
             protocol_name="General Wellness Protocol",
@@ -661,6 +824,7 @@ Respond in this exact JSON format:
             ],
         )
     except Exception as e:
+        diag_logger.error(f"Protocol generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Protocol generation failed: {str(e)}")
 
 

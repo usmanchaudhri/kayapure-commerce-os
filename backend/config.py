@@ -58,6 +58,15 @@ class Settings:
     # MCP mode toggle: when True and token is set, use live MCP; otherwise mock
     MCP_ENABLED: bool = os.getenv("MCP_ENABLED", "false").lower() == "true"
 
+    # LangSmith Tracing
+    LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
+    LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "kayapure-commerce-os")
+    LANGSMITH_TRACING_ENABLED: bool = os.getenv("LANGSMITH_TRACING_V2", "false").lower() == "true"
+
+    # Logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_DIR: str = os.getenv("LOG_DIR", "logs")
+
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))

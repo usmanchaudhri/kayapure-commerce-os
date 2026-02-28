@@ -8,9 +8,17 @@ Nodes:
   3. strategy_agent    - LLM-based reasoning to propose actions
   4. human_approval_gate - Pauses execution until human approves/denies
   5. firecracker_executor_node - Executes approved actions in isolated microVM
+
+Logging:
+  All nodes emit structured logs via utils.logging_config.
+  Logs are written to:
+    - logs/agent.log  (JSON, rotating)
+    - Console (colored, human-readable)
+  When LangSmith is enabled, every node execution is traced automatically.
 """
 
 import json
+import time
 import uuid
 from datetime import datetime
 from typing import TypedDict, Annotated, List, Optional, Dict, Any
@@ -26,6 +34,9 @@ from services.commerce import commerce_service
 from services.marketing import marketing_service
 from services.logistics import logistics_service
 from services.firecracker_manager import firecracker_manager
+from utils.logging_config import get_logger
+
+wf_logger = get_logger("workflow")
 
 
 # ============================================
@@ -71,6 +82,12 @@ async def sensor_node(state: CommerceState) -> dict:
     Polls simulated APIs: Shopify, Meta Ads, Amazon SP-API, Flexport.
     Aggregates all sensor data into the state.
     """
+    node_start = time.perf_counter()
+    wf_logger.info(
+        "▶ SENSOR NODE: Starting data collection from all platforms",
+        extra={"node": "sensor_node", "phase": "start"},
+    )
+
     logs = []
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
@@ -80,7 +97,20 @@ async def sensor_node(state: CommerceState) -> dict:
 
     try:
         # Poll Shopify
+        t0 = time.perf_counter()
         sales_data = await commerce_service.get_daily_sales()
+        shopify_ms = (time.perf_counter() - t0) * 1000
+        wf_logger.info(
+            f"  Shopify polled in {shopify_ms:.1f}ms: "
+            f"${sales_data['total_revenue']:.2f} revenue, {sales_data['total_orders']} orders",
+            extra={
+                "node": "sensor_node",
+                "source": "shopify",
+                "duration_ms": round(shopify_ms, 1),
+                "revenue": sales_data["total_revenue"],
+                "orders": sales_data["total_orders"],
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "sensor_node",
@@ -88,7 +118,22 @@ async def sensor_node(state: CommerceState) -> dict:
         })
 
         # Poll Meta/Google Ads
+        t0 = time.perf_counter()
         ad_spend_data = await marketing_service.get_ad_spend_summary()
+        ads_ms = (time.perf_counter() - t0) * 1000
+        wf_logger.info(
+            f"  Meta Ads polled in {ads_ms:.1f}ms: "
+            f"${ad_spend_data['total_spend']:.2f} spend, "
+            f"{len(ad_spend_data['campaigns'])} campaigns (source: {ad_spend_data.get('source', 'unknown')})",
+            extra={
+                "node": "sensor_node",
+                "source": "meta_ads",
+                "duration_ms": round(ads_ms, 1),
+                "total_spend": ad_spend_data["total_spend"],
+                "campaign_count": len(ad_spend_data["campaigns"]),
+                "data_source": ad_spend_data.get("source", "unknown"),
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "sensor_node",
@@ -96,12 +141,37 @@ async def sensor_node(state: CommerceState) -> dict:
         })
 
         # Poll Flexport
+        t0 = time.perf_counter()
         inventory_data = await logistics_service.get_inventory_status()
+        logistics_ms = (time.perf_counter() - t0) * 1000
+        wf_logger.info(
+            f"  Flexport polled in {logistics_ms:.1f}ms: "
+            f"{inventory_data['total_units_on_hand']} units on hand, "
+            f"{inventory_data['total_units_in_transit']} in transit",
+            extra={
+                "node": "sensor_node",
+                "source": "flexport",
+                "duration_ms": round(logistics_ms, 1),
+                "units_on_hand": inventory_data["total_units_on_hand"],
+                "units_in_transit": inventory_data["total_units_in_transit"],
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "sensor_node",
             "message": f"Inventory: {inventory_data['total_units_on_hand']} units on hand, {inventory_data['total_units_in_transit']} in transit",
         })
+
+        total_ms = (time.perf_counter() - node_start) * 1000
+        wf_logger.info(
+            f"✓ SENSOR NODE completed in {total_ms:.1f}ms",
+            extra={
+                "node": "sensor_node",
+                "phase": "complete",
+                "duration_ms": round(total_ms, 1),
+                "sources_polled": 3,
+            },
+        )
 
         return {
             "sales_data": sales_data,
@@ -111,6 +181,18 @@ async def sensor_node(state: CommerceState) -> dict:
         }
 
     except Exception as e:
+        total_ms = (time.perf_counter() - node_start) * 1000
+        wf_logger.error(
+            f"✗ SENSOR NODE failed after {total_ms:.1f}ms: {e}",
+            extra={
+                "node": "sensor_node",
+                "phase": "error",
+                "duration_ms": round(total_ms, 1),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+            exc_info=True,
+        )
         return {
             "errors": [{"node": "sensor_node", "error": str(e), "timestamp": datetime.utcnow().isoformat()}],
             "agent_logs": logs + [{"timestamp": datetime.utcnow().isoformat(), "node": "sensor_node", "message": f"ERROR: {str(e)}"}],
@@ -122,6 +204,12 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
     Calculates real-time Net Profit and Contribution Margin.
     Performs SKU-level profitability analysis.
     """
+    node_start = time.perf_counter()
+    wf_logger.info(
+        "▶ P&L ANALYZER: Calculating metrics",
+        extra={"node": "p_and_l_analyzer", "phase": "start"},
+    )
+
     logs = []
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
@@ -156,6 +244,20 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
         "calculated_at": datetime.utcnow().isoformat(),
     }
 
+    wf_logger.info(
+        f"  P&L: Revenue ${total_revenue:.2f} | COGS ${total_cogs:.2f} | "
+        f"Ad Spend ${total_ad_spend:.2f} | Net Profit ${net_profit:.2f} | "
+        f"Margin {contribution_margin:.1f}%",
+        extra={
+            "node": "p_and_l_analyzer",
+            "revenue": total_revenue,
+            "cogs": total_cogs,
+            "ad_spend": total_ad_spend,
+            "net_profit": net_profit,
+            "contribution_margin": contribution_margin,
+        },
+    )
+
     # SKU-level analysis
     sku_analysis = []
     inv_items = inventory.get("inventory", []) if isinstance(inventory, dict) else []
@@ -174,6 +276,8 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
         days_of_stock = round(on_hand / max(daily_velocity, 1), 1)
         landed_cost = inv_item.get("landed_cost_per_unit", 0)
 
+        stock_risk = days_of_stock < 14 and eta_days > 14
+
         sku_analysis.append({
             "sku_code": sku_code,
             "current_stock": on_hand,
@@ -182,11 +286,23 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
             "shipping_eta_days": eta_days,
             "revenue": sku_revenue,
             "landed_cost": landed_cost,
-            "stock_risk": days_of_stock < 14 and eta_days > 14,
+            "stock_risk": stock_risk,
             "contribution_margin": round(
                 ((sku_revenue - (daily_velocity * landed_cost)) / max(sku_revenue, 1)) * 100, 2
             ),
         })
+
+        if stock_risk:
+            wf_logger.warning(
+                f"  ⚠ SKU {sku_code}: {days_of_stock:.0f} days stock, ETA {eta_days} days — AT RISK",
+                extra={
+                    "node": "p_and_l_analyzer",
+                    "sku_code": sku_code,
+                    "days_of_stock": days_of_stock,
+                    "eta_days": eta_days,
+                    "stock_risk": True,
+                },
+            )
 
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
@@ -202,6 +318,19 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
             "message": f"WARNING: {len(at_risk_skus)} SKUs at stock-out risk: {[s['sku_code'] for s in at_risk_skus]}",
         })
 
+    total_ms = (time.perf_counter() - node_start) * 1000
+    wf_logger.info(
+        f"✓ P&L ANALYZER completed in {total_ms:.1f}ms: "
+        f"{len(sku_analysis)} SKUs analyzed, {len(at_risk_skus)} at risk",
+        extra={
+            "node": "p_and_l_analyzer",
+            "phase": "complete",
+            "duration_ms": round(total_ms, 1),
+            "sku_count": len(sku_analysis),
+            "at_risk_count": len(at_risk_skus),
+        },
+    )
+
     return {
         "pnl_summary": pnl_summary,
         "sku_analysis": sku_analysis,
@@ -216,6 +345,12 @@ async def strategy_agent(state: CommerceState) -> dict:
       - Inventory Shield: Stock protection via price/budget adjustments
       - Competitor Snipe: Competitive pricing responses
     """
+    node_start = time.perf_counter()
+    wf_logger.info(
+        "▶ STRATEGY AGENT: Analyzing data and formulating proposals",
+        extra={"node": "strategy_agent", "phase": "start"},
+    )
+
     logs = []
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
@@ -230,7 +365,6 @@ async def strategy_agent(state: CommerceState) -> dict:
     # ---- Rule-Based Strategy: Inventory Shield ----
     for sku in sku_analysis:
         if sku.get("stock_risk", False):
-            # IF (Current_Stock / Daily_Sales_Velocity) < 14 days AND Shipping_ETA > 14 days
             action = {
                 "id": str(uuid.uuid4()),
                 "action_type": "inventory_shield",
@@ -263,6 +397,17 @@ async def strategy_agent(state: CommerceState) -> dict:
                 },
             }
             proposed_actions.append(action)
+            wf_logger.info(
+                f"  🛡 INVENTORY SHIELD triggered for {sku['sku_code']}: "
+                f"{sku['days_of_stock']:.0f} days stock, {sku['shipping_eta_days']} days ETA",
+                extra={
+                    "node": "strategy_agent",
+                    "strategy": "inventory_shield",
+                    "sku_code": sku["sku_code"],
+                    "days_of_stock": sku["days_of_stock"],
+                    "shipping_eta_days": sku["shipping_eta_days"],
+                },
+            )
             logs.append({
                 "timestamp": datetime.utcnow().isoformat(),
                 "node": "strategy_agent",
@@ -272,12 +417,10 @@ async def strategy_agent(state: CommerceState) -> dict:
     # ---- Rule-Based Strategy: Competitor Snipe ----
     for sku in sku_analysis:
         margin = sku.get("contribution_margin", 0)
-        # We need competitor price data - check from inventory data
         inv_data = state.get("inventory_data", {})
         inv_items = inv_data.get("inventory", []) if isinstance(inv_data, dict) else []
 
         # Simulate competitor price check (in production, from Amazon SP-API)
-        # Using seed data from database
         competitor_price_lower = margin > 30 and not sku.get("stock_risk", False)
 
         if competitor_price_lower and margin > 30:
@@ -305,6 +448,16 @@ async def strategy_agent(state: CommerceState) -> dict:
                 },
             }
             proposed_actions.append(action)
+            wf_logger.info(
+                f"  🎯 COMPETITOR SNIPE triggered for {sku['sku_code']}: "
+                f"margin {margin:.1f}%, proposing 5% discount",
+                extra={
+                    "node": "strategy_agent",
+                    "strategy": "competitor_snipe",
+                    "sku_code": sku["sku_code"],
+                    "contribution_margin": margin,
+                },
+            )
             logs.append({
                 "timestamp": datetime.utcnow().isoformat(),
                 "node": "strategy_agent",
@@ -313,6 +466,12 @@ async def strategy_agent(state: CommerceState) -> dict:
 
     # ---- LLM-Enhanced Analysis ----
     try:
+        t0 = time.perf_counter()
+        wf_logger.info(
+            f"  Invoking LLM ({settings.STRATEGY_MODEL}) for strategic analysis...",
+            extra={"node": "strategy_agent", "model": settings.STRATEGY_MODEL},
+        )
+
         llm = ChatOpenAI(
             model=settings.STRATEGY_MODEL,
             temperature=0.3,
@@ -335,7 +494,18 @@ Provide a brief strategic assessment (2-3 sentences) of the overall business hea
             HumanMessage(content=analysis_prompt),
         ])
 
+        llm_ms = (time.perf_counter() - t0) * 1000
         agent_reasoning = response.content
+        wf_logger.info(
+            f"  LLM analysis completed in {llm_ms:.1f}ms: {agent_reasoning[:150]}...",
+            extra={
+                "node": "strategy_agent",
+                "llm_model": settings.STRATEGY_MODEL,
+                "llm_duration_ms": round(llm_ms, 1),
+                "reasoning_preview": agent_reasoning[:300],
+                "token_usage": getattr(response, "usage_metadata", None),
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "strategy_agent",
@@ -344,11 +514,33 @@ Provide a brief strategic assessment (2-3 sentences) of the overall business hea
 
     except Exception as e:
         agent_reasoning = f"LLM analysis unavailable: {str(e)}. Rule-based strategies applied."
+        wf_logger.warning(
+            f"  LLM call failed, using rule-based fallback: {e}",
+            extra={
+                "node": "strategy_agent",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "fallback": True,
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "strategy_agent",
             "message": f"LLM fallback: {str(e)[:100]}",
         })
+
+    total_ms = (time.perf_counter() - node_start) * 1000
+    wf_logger.info(
+        f"✓ STRATEGY AGENT completed in {total_ms:.1f}ms: "
+        f"{len(proposed_actions)} actions proposed",
+        extra={
+            "node": "strategy_agent",
+            "phase": "complete",
+            "duration_ms": round(total_ms, 1),
+            "actions_proposed": len(proposed_actions),
+            "action_types": [a["action_type"] for a in proposed_actions],
+        },
+    )
 
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
@@ -365,7 +557,12 @@ Provide a brief strategic assessment (2-3 sentences) of the overall business hea
 
 def should_wait_for_approval(state: CommerceState) -> str:
     """Conditional edge: route based on whether there are pending actions."""
-    if state.get("proposed_actions") and len(state["proposed_actions"]) > 0:
+    has_actions = state.get("proposed_actions") and len(state["proposed_actions"]) > 0
+    wf_logger.info(
+        f"  Conditional edge: {'→ human_approval_gate' if has_actions else '→ END (no actions)'}",
+        extra={"node": "conditional", "has_actions": has_actions},
+    )
+    if has_actions:
         return "wait_for_approval"
     return "end"
 
@@ -376,10 +573,20 @@ async def human_approval_gate(state: CommerceState) -> dict:
     In the actual system, this node uses LangGraph's interrupt mechanism.
     For the prototype, it sets the state to 'pending' and the API handles approval.
     """
+    action_count = len(state.get("proposed_actions", []))
+    wf_logger.info(
+        f"▶ HUMAN APPROVAL GATE: Waiting for approval on {action_count} actions",
+        extra={
+            "node": "human_approval_gate",
+            "phase": "waiting",
+            "pending_actions": action_count,
+        },
+    )
+
     logs = [{
         "timestamp": datetime.utcnow().isoformat(),
         "node": "human_approval_gate",
-        "message": f"Waiting for human approval on {len(state.get('proposed_actions', []))} proposed actions...",
+        "message": f"Waiting for human approval on {action_count} proposed actions...",
     }]
 
     return {
@@ -397,10 +604,15 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
     4. Returns hardware-signed results
     5. Terminates VM
     """
+    node_start = time.perf_counter()
     logs = []
     current_action = state.get("current_action")
 
     if not current_action:
+        wf_logger.warning(
+            "▶ FIRECRACKER EXECUTOR: No action to execute",
+            extra={"node": "firecracker_executor", "phase": "skip"},
+        )
         return {
             "agent_logs": [{
                 "timestamp": datetime.utcnow().isoformat(),
@@ -412,6 +624,16 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
     action_type = current_action.get("action_type", "generic")
     parameters = current_action.get("parameters", {})
 
+    wf_logger.info(
+        f"▶ FIRECRACKER EXECUTOR: Booting microVM for action: {action_type}",
+        extra={
+            "node": "firecracker_executor",
+            "phase": "start",
+            "action_type": action_type,
+            "action_id": current_action.get("id", "unknown"),
+        },
+    )
+
     logs.append({
         "timestamp": datetime.utcnow().isoformat(),
         "node": "firecracker_executor",
@@ -420,7 +642,17 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
 
     try:
         # 1. Boot VM
+        t0 = time.perf_counter()
         vm_session = await firecracker_manager.boot_vm()
+        boot_ms = (time.perf_counter() - t0) * 1000
+        wf_logger.info(
+            f"  VM booted in {vm_session.boot_time_ms}ms (session: {vm_session.session_id})",
+            extra={
+                "node": "firecracker_executor",
+                "vm_session_id": vm_session.session_id,
+                "boot_time_ms": vm_session.boot_time_ms,
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "firecracker_executor",
@@ -428,25 +660,48 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
         })
 
         # 2-3. Execute action in VM
-        # Process sub-actions if present
         sub_actions = parameters.get("sub_actions", [])
         results = []
 
         if sub_actions:
-            for sub_action in sub_actions:
+            for i, sub_action in enumerate(sub_actions):
                 sub_type = sub_action.get("type", action_type)
+                t0 = time.perf_counter()
                 result = await firecracker_manager.execute_in_vm(
                     vm_session, sub_type, {**parameters, **sub_action}
                 )
+                exec_ms = (time.perf_counter() - t0) * 1000
                 results.append(result)
+                wf_logger.info(
+                    f"  Sub-action {i+1}/{len(sub_actions)} ({sub_type}) executed in {exec_ms:.1f}ms: "
+                    f"success={result.get('success', False)}",
+                    extra={
+                        "node": "firecracker_executor",
+                        "sub_action_type": sub_type,
+                        "sub_action_index": i,
+                        "success": result.get("success", False),
+                        "duration_ms": round(exec_ms, 1),
+                    },
+                )
                 logs.append({
                     "timestamp": datetime.utcnow().isoformat(),
                     "node": "firecracker_executor",
                     "message": f"Sub-action {sub_type} executed: {result.get('success', False)}",
                 })
         else:
+            t0 = time.perf_counter()
             result = await firecracker_manager.execute_in_vm(vm_session, action_type, parameters)
+            exec_ms = (time.perf_counter() - t0) * 1000
             results.append(result)
+            wf_logger.info(
+                f"  Action {action_type} executed in {exec_ms:.1f}ms: success={result.get('success', False)}",
+                extra={
+                    "node": "firecracker_executor",
+                    "action_type": action_type,
+                    "success": result.get("success", False),
+                    "duration_ms": round(exec_ms, 1),
+                },
+            )
 
         # 4. Collect results
         execution_result = {
@@ -466,6 +721,19 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
 
         # 5. Terminate VM
         await firecracker_manager.terminate_vm(vm_session)
+        total_ms = (time.perf_counter() - node_start) * 1000
+        wf_logger.info(
+            f"✓ FIRECRACKER EXECUTOR completed in {total_ms:.1f}ms: "
+            f"VM {vm_session.session_id} terminated, signature: {vm_session.hardware_signature[:16]}...",
+            extra={
+                "node": "firecracker_executor",
+                "phase": "complete",
+                "duration_ms": round(total_ms, 1),
+                "vm_session_id": vm_session.session_id,
+                "hardware_signature": vm_session.hardware_signature,
+                "success": execution_result["success"],
+            },
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "firecracker_executor",
@@ -478,6 +746,18 @@ async def firecracker_executor_node(state: CommerceState) -> dict:
         }
 
     except Exception as e:
+        total_ms = (time.perf_counter() - node_start) * 1000
+        wf_logger.error(
+            f"✗ FIRECRACKER EXECUTOR failed after {total_ms:.1f}ms: {e}",
+            extra={
+                "node": "firecracker_executor",
+                "phase": "error",
+                "duration_ms": round(total_ms, 1),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+            exc_info=True,
+        )
         logs.append({
             "timestamp": datetime.utcnow().isoformat(),
             "node": "firecracker_executor",
