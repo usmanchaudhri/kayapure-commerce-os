@@ -11,6 +11,7 @@ import DiagnosticStorefront from "./pages/DiagnosticStorefront";
 import VMTelemetry from "./pages/VMTelemetry";
 import Inventory from "./pages/Inventory";
 import Settings from "./pages/Settings";
+import DataSources from "./pages/DataSources";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
         <Route path="/diagnostic" component={DiagnosticStorefront} />
         <Route path="/vm-telemetry" component={VMTelemetry} />
         <Route path="/inventory" component={Inventory} />
+        <Route path="/data-sources" component={DataSources} />
         <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

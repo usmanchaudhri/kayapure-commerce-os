@@ -19,6 +19,7 @@ import {
   Wifi,
   WifiOff,
   Loader2,
+  Radio,
 } from "lucide-react";
 import { testBackendConnection, getApiBase } from "@/lib/api";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { path: "/actions", label: "Action Queue", icon: ListChecks },
   { path: "/inventory", label: "Inventory", icon: Package },
   { path: "/vm-telemetry", label: "VM Telemetry", icon: Server },
+  { path: "/data-sources", label: "Data Sources", icon: Radio },
   { path: "/diagnostic", label: "Diagnostic", icon: Stethoscope },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ];
