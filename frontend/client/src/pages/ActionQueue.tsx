@@ -47,7 +47,10 @@ export default function ActionQueue() {
   const loadActions = useCallback(async () => {
     try {
       const data = await fetchActions();
-      setActions(data);
+      // Guard: only set actions if response is an array (feature flag may return object)
+      if (Array.isArray(data)) {
+        setActions(data);
+      }
     } catch (e) {
       console.error("Failed to fetch actions:", e);
     } finally {

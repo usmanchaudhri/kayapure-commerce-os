@@ -67,6 +67,20 @@ class Settings:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_DIR: str = os.getenv("LOG_DIR", "logs")
 
+    # Feature Flags — comma-separated list of enabled data sources
+    # Valid values: marketing, commerce, logistics, dwh, vm, diagnostic
+    # Example: ENABLED_SOURCES=marketing,commerce,dwh
+    ENABLED_SOURCES_RAW: str = os.getenv("ENABLED_SOURCES", "marketing,commerce,logistics,dwh,vm,diagnostic")
+
+    @property
+    def enabled_sources(self) -> set:
+        """Parse ENABLED_SOURCES into a set of lowercase source names."""
+        return {s.strip().lower() for s in self.ENABLED_SOURCES_RAW.split(",") if s.strip()}
+
+    def is_source_enabled(self, source: str) -> bool:
+        """Check if a specific data source is enabled."""
+        return source.lower() in self.enabled_sources
+
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))

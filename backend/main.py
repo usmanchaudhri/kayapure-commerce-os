@@ -197,6 +197,43 @@ async def health_check():
 
 
 # ============================================
+# Feature Flags — Data Source Control
+# ============================================
+def source_disabled_response(source_name: str):
+    """Standard response for disabled data sources."""
+    return {
+        "enabled": False,
+        "source": source_name,
+        "message": f"{source_name} data source is not connected. Enable it by adding '{source_name}' to ENABLED_SOURCES in your .env file.",
+        "data": None,
+    }
+
+
+@app.get("/api/feature-flags")
+async def get_feature_flags():
+    """Return which data sources are enabled/disabled for the frontend."""
+    all_sources = ["marketing", "commerce", "logistics", "dwh", "vm", "diagnostic"]
+    return {
+        "enabled_sources": list(settings.enabled_sources),
+        "sources": {
+            source: {
+                "enabled": settings.is_source_enabled(source),
+                "label": {
+                    "marketing": "Marketing (Meta Ads)",
+                    "commerce": "Commerce (Shopify)",
+                    "logistics": "Logistics (Flexport)",
+                    "dwh": "Data Warehouse (PostgreSQL)",
+                    "vm": "VM Telemetry (Firecracker)",
+                    "diagnostic": "Diagnostic Storefront",
+                }.get(source, source.title()),
+            }
+            for source in all_sources
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+# ============================================
 # MCP Status & Diagnostics
 # ============================================
 @app.get("/api/mcp/status")
@@ -298,9 +335,11 @@ async def get_logs(
 # ============================================
 # SKU Endpoints
 # ============================================
-@app.get("/api/skus", response_model=List[SKUResponse])
+@app.get("/api/skus")
 def list_skus(db: Session = Depends(get_db)):
     """List all SKUs with computed metrics."""
+    if not settings.is_source_enabled("dwh"):
+        return source_disabled_response("dwh")
     skus = db.query(SKU).all()
     result = []
     for sku in skus:
@@ -325,9 +364,11 @@ def list_skus(db: Session = Depends(get_db)):
     return result
 
 
-@app.post("/api/skus", response_model=SKUResponse)
+@app.post("/api/skus")
 def create_sku(sku_data: SKUCreate, db: Session = Depends(get_db)):
     """Create a new SKU."""
+    if not settings.is_source_enabled("dwh"):
+        return source_disabled_response("dwh")
     sku = SKU(**sku_data.model_dump())
     db.add(sku)
     db.commit()
@@ -335,9 +376,11 @@ def create_sku(sku_data: SKUCreate, db: Session = Depends(get_db)):
     return sku
 
 
-@app.get("/api/skus/{sku_id}", response_model=SKUResponse)
+@app.get("/api/skus/{sku_id}")
 def get_sku(sku_id: int, db: Session = Depends(get_db)):
     """Get a specific SKU by ID."""
+    if not settings.is_source_enabled("dwh"):
+        return source_disabled_response("dwh")
     sku = db.query(SKU).filter(SKU.id == sku_id).first()
     if not sku:
         raise HTTPException(status_code=404, detail="SKU not found")
@@ -347,22 +390,26 @@ def get_sku(sku_id: int, db: Session = Depends(get_db)):
 # ============================================
 # Daily Metrics / P&L Endpoints
 # ============================================
-@app.get("/api/metrics", response_model=List[DailyMetricResponse])
+@app.get("/api/metrics")
 def list_metrics(
     limit: int = Query(default=30, le=365),
     channel: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """List daily metrics, ordered by most recent."""
+    if not settings.is_source_enabled("dwh"):
+        return source_disabled_response("dwh")
     query = db.query(DailyMetric).order_by(desc(DailyMetric.timestamp))
     if channel:
         query = query.filter(DailyMetric.channel == channel)
     return query.limit(limit).all()
 
 
-@app.get("/api/metrics/pnl-summary", response_model=PnLSummary)
+@app.get("/api/metrics/pnl-summary")
 def get_pnl_summary(days: int = Query(default=7, le=90), db: Session = Depends(get_db)):
     """Get P&L summary for the specified period."""
+    if not settings.is_source_enabled("dwh"):
+        return source_disabled_response("dwh")
     metrics = (
         db.query(DailyMetric)
         .order_by(desc(DailyMetric.timestamp))
@@ -691,12 +738,14 @@ async def get_agent_state():
 # ============================================
 # VM Audit Trail
 # ============================================
-@app.get("/api/vm-audit", response_model=List[VMAuditResponse])
+@app.get("/api/vm-audit")
 def list_vm_audits(
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
 ):
     """List VM audit trail entries."""
+    if not settings.is_source_enabled("vm"):
+        return source_disabled_response("vm")
     return (
         db.query(VMAuditTrail)
         .order_by(desc(VMAuditTrail.created_at))
@@ -711,18 +760,22 @@ def list_vm_audits(
 @app.get("/api/vm/telemetry")
 async def get_vm_telemetry():
     """Get current Firecracker VM telemetry."""
+    if not settings.is_source_enabled("vm"):
+        return source_disabled_response("vm")
     return firecracker_manager.get_telemetry()
 
 
 # ============================================
 # Diagnostic Storefront - AI Supplement Protocols
 # ============================================
-@app.post("/api/diagnostic/protocol", response_model=ProtocolResponse)
+@app.post("/api/diagnostic/protocol")
 async def generate_protocol(request: HealthGoalRequest):
     """
     Generate a science-backed supplement protocol based on health goals.
     Uses LLM to create personalized recommendations.
     """
+    if not settings.is_source_enabled("diagnostic"):
+        return source_disabled_response("diagnostic")
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -834,6 +887,8 @@ Respond in this exact JSON format:
 @app.get("/api/commerce/daily-sales")
 async def get_daily_sales():
     """Get today's sales data from Shopify."""
+    if not settings.is_source_enabled("commerce"):
+        return source_disabled_response("commerce")
     return await commerce_service.get_daily_sales()
 
 
@@ -845,6 +900,8 @@ async def get_ad_spend(days: int = Query(default=7, ge=1, le=90, description="Nu
     - days=7: returns last 7 days with daily breakdown (default)
     - days=30: returns last 30 days with daily breakdown
     """
+    if not settings.is_source_enabled("marketing"):
+        return source_disabled_response("marketing")
     if days == 1:
         return await marketing_service.get_ad_spend_summary()
     return await marketing_service.get_ad_spend_history(days=days)
@@ -853,6 +910,8 @@ async def get_ad_spend(days: int = Query(default=7, ge=1, le=90, description="Nu
 @app.get("/api/logistics/inventory")
 async def get_inventory():
     """Get current inventory status."""
+    if not settings.is_source_enabled("logistics"):
+        return source_disabled_response("logistics")
     return await logistics_service.get_inventory_status()
 
 

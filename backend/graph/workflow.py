@@ -95,81 +95,102 @@ async def sensor_node(state: CommerceState) -> dict:
         "message": "Starting data collection from all platforms...",
     })
 
+    sales_data = None
+    ad_spend_data = None
+    inventory_data = None
+    sources_polled = 0
+
     try:
-        # Poll Shopify
-        t0 = time.perf_counter()
-        sales_data = await commerce_service.get_daily_sales()
-        shopify_ms = (time.perf_counter() - t0) * 1000
-        wf_logger.info(
-            f"  Shopify polled in {shopify_ms:.1f}ms: "
-            f"${sales_data['total_revenue']:.2f} revenue, {sales_data['total_orders']} orders",
-            extra={
+        # Poll Shopify (only if commerce source is enabled)
+        if settings.is_source_enabled("commerce"):
+            t0 = time.perf_counter()
+            sales_data = await commerce_service.get_daily_sales()
+            shopify_ms = (time.perf_counter() - t0) * 1000
+            sources_polled += 1
+            wf_logger.info(
+                f"  Shopify polled in {shopify_ms:.1f}ms: "
+                f"${sales_data['total_revenue']:.2f} revenue, {sales_data['total_orders']} orders",
+                extra={
+                    "node": "sensor_node",
+                    "source": "shopify",
+                    "duration_ms": round(shopify_ms, 1),
+                    "revenue": sales_data["total_revenue"],
+                    "orders": sales_data["total_orders"],
+                },
+            )
+            logs.append({
+                "timestamp": datetime.utcnow().isoformat(),
                 "node": "sensor_node",
-                "source": "shopify",
-                "duration_ms": round(shopify_ms, 1),
-                "revenue": sales_data["total_revenue"],
-                "orders": sales_data["total_orders"],
-            },
-        )
-        logs.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "node": "sensor_node",
-            "message": f"Shopify: ${sales_data['total_revenue']:.2f} revenue, {sales_data['total_orders']} orders",
-        })
+                "message": f"Shopify: ${sales_data['total_revenue']:.2f} revenue, {sales_data['total_orders']} orders",
+            })
+        else:
+            wf_logger.info("  Shopify SKIPPED (commerce source disabled)", extra={"node": "sensor_node", "source": "shopify", "status": "disabled"})
+            logs.append({"timestamp": datetime.utcnow().isoformat(), "node": "sensor_node", "message": "Shopify: SKIPPED (source disabled)"})
 
-        # Poll Meta/Google Ads
-        t0 = time.perf_counter()
-        ad_spend_data = await marketing_service.get_ad_spend_summary()
-        ads_ms = (time.perf_counter() - t0) * 1000
-        wf_logger.info(
-            f"  Meta Ads polled in {ads_ms:.1f}ms: "
-            f"${ad_spend_data['total_spend']:.2f} spend, "
-            f"{len(ad_spend_data['campaigns'])} campaigns (source: {ad_spend_data.get('source', 'unknown')})",
-            extra={
+        # Poll Meta/Google Ads (only if marketing source is enabled)
+        if settings.is_source_enabled("marketing"):
+            t0 = time.perf_counter()
+            ad_spend_data = await marketing_service.get_ad_spend_summary()
+            ads_ms = (time.perf_counter() - t0) * 1000
+            sources_polled += 1
+            wf_logger.info(
+                f"  Meta Ads polled in {ads_ms:.1f}ms: "
+                f"${ad_spend_data['total_spend']:.2f} spend, "
+                f"{len(ad_spend_data['campaigns'])} campaigns (source: {ad_spend_data.get('source', 'unknown')})",
+                extra={
+                    "node": "sensor_node",
+                    "source": "meta_ads",
+                    "duration_ms": round(ads_ms, 1),
+                    "total_spend": ad_spend_data["total_spend"],
+                    "campaign_count": len(ad_spend_data["campaigns"]),
+                    "data_source": ad_spend_data.get("source", "unknown"),
+                },
+            )
+            logs.append({
+                "timestamp": datetime.utcnow().isoformat(),
                 "node": "sensor_node",
-                "source": "meta_ads",
-                "duration_ms": round(ads_ms, 1),
-                "total_spend": ad_spend_data["total_spend"],
-                "campaign_count": len(ad_spend_data["campaigns"]),
-                "data_source": ad_spend_data.get("source", "unknown"),
-            },
-        )
-        logs.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "node": "sensor_node",
-            "message": f"Ad Spend: ${ad_spend_data['total_spend']:.2f} across {len(ad_spend_data['campaigns'])} campaigns",
-        })
+                "message": f"Ad Spend: ${ad_spend_data['total_spend']:.2f} across {len(ad_spend_data['campaigns'])} campaigns",
+            })
+        else:
+            wf_logger.info("  Meta Ads SKIPPED (marketing source disabled)", extra={"node": "sensor_node", "source": "meta_ads", "status": "disabled"})
+            logs.append({"timestamp": datetime.utcnow().isoformat(), "node": "sensor_node", "message": "Meta Ads: SKIPPED (source disabled)"})
 
-        # Poll Flexport
-        t0 = time.perf_counter()
-        inventory_data = await logistics_service.get_inventory_status()
-        logistics_ms = (time.perf_counter() - t0) * 1000
-        wf_logger.info(
-            f"  Flexport polled in {logistics_ms:.1f}ms: "
-            f"{inventory_data['total_units_on_hand']} units on hand, "
-            f"{inventory_data['total_units_in_transit']} in transit",
-            extra={
+        # Poll Flexport (only if logistics source is enabled)
+        if settings.is_source_enabled("logistics"):
+            t0 = time.perf_counter()
+            inventory_data = await logistics_service.get_inventory_status()
+            logistics_ms = (time.perf_counter() - t0) * 1000
+            sources_polled += 1
+            wf_logger.info(
+                f"  Flexport polled in {logistics_ms:.1f}ms: "
+                f"{inventory_data['total_units_on_hand']} units on hand, "
+                f"{inventory_data['total_units_in_transit']} in transit",
+                extra={
+                    "node": "sensor_node",
+                    "source": "flexport",
+                    "duration_ms": round(logistics_ms, 1),
+                    "units_on_hand": inventory_data["total_units_on_hand"],
+                    "units_in_transit": inventory_data["total_units_in_transit"],
+                },
+            )
+            logs.append({
+                "timestamp": datetime.utcnow().isoformat(),
                 "node": "sensor_node",
-                "source": "flexport",
-                "duration_ms": round(logistics_ms, 1),
-                "units_on_hand": inventory_data["total_units_on_hand"],
-                "units_in_transit": inventory_data["total_units_in_transit"],
-            },
-        )
-        logs.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "node": "sensor_node",
-            "message": f"Inventory: {inventory_data['total_units_on_hand']} units on hand, {inventory_data['total_units_in_transit']} in transit",
-        })
+                "message": f"Inventory: {inventory_data['total_units_on_hand']} units on hand, {inventory_data['total_units_in_transit']} in transit",
+            })
+        else:
+            wf_logger.info("  Flexport SKIPPED (logistics source disabled)", extra={"node": "sensor_node", "source": "flexport", "status": "disabled"})
+            logs.append({"timestamp": datetime.utcnow().isoformat(), "node": "sensor_node", "message": "Flexport: SKIPPED (source disabled)"})
 
         total_ms = (time.perf_counter() - node_start) * 1000
         wf_logger.info(
-            f"✓ SENSOR NODE completed in {total_ms:.1f}ms",
+            f"✓ SENSOR NODE completed in {total_ms:.1f}ms ({sources_polled} sources polled)",
             extra={
                 "node": "sensor_node",
                 "phase": "complete",
                 "duration_ms": round(total_ms, 1),
-                "sources_polled": 3,
+                "sources_polled": sources_polled,
+                "enabled_sources": list(settings.enabled_sources),
             },
         )
 

@@ -201,6 +201,16 @@ export async function fetchMCPStatus() {
   return fetchAPI<any>("/api/mcp/status");
 }
 
+// --- Feature Flags ---
+export interface FeatureFlags {
+  enabled_sources: string[];
+  all_sources: { key: string; label: string; enabled: boolean }[];
+}
+
+export async function fetchFeatureFlags(): Promise<FeatureFlags> {
+  return fetchAPI<FeatureFlags>("/api/feature-flags");
+}
+
 // --- Diagnostic ---
 export async function generateProtocol(request: {
   goals: string[];

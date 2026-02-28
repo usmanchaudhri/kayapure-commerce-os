@@ -56,8 +56,22 @@ export default function ControlTower() {
   const [cycleResult, setCycleResult] = useState<any>(null);
 
   useEffect(() => {
-    fetchPnLSummary(7).then(setPnl).catch(() => {});
-    fetchMetrics(7).then(setMetrics).catch(() => {});
+    fetchPnLSummary(7)
+      .then((data) => {
+        // Guard: if feature flag disabled, API returns {enabled: false, ...} instead of P&L object
+        if (data && data.enabled !== false && data.total_revenue !== undefined) {
+          setPnl(data);
+        }
+      })
+      .catch(() => {});
+    fetchMetrics(7)
+      .then((data) => {
+        // Guard: only set metrics if response is an array
+        if (Array.isArray(data)) {
+          setMetrics(data);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -89,8 +103,16 @@ export default function ControlTower() {
       setCycleResult(result);
       toast.success(`Agent cycle complete: ${result.proposed_actions?.length || 0} actions proposed`);
       // Refresh P&L
-      fetchPnLSummary(7).then(setPnl).catch(() => {});
-      fetchMetrics(7).then(setMetrics).catch(() => {});
+      fetchPnLSummary(7)
+        .then((data) => {
+          if (data && data.enabled !== false && data.total_revenue !== undefined) setPnl(data);
+        })
+        .catch(() => {});
+      fetchMetrics(7)
+        .then((data) => {
+          if (Array.isArray(data)) setMetrics(data);
+        })
+        .catch(() => {});
     } catch (e: any) {
       toast.error(`Agent cycle failed: ${e.message}`);
     } finally {

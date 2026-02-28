@@ -24,7 +24,12 @@ export default function Inventory() {
 
   useEffect(() => {
     fetchSKUs()
-      .then(setSkus)
+      .then((data) => {
+        // Guard: only set SKUs if response is an array (feature flag may return object)
+        if (Array.isArray(data)) {
+          setSkus(data);
+        }
+      })
       .catch((e) => console.error("Failed to load SKUs:", e))
       .finally(() => setLoading(false));
   }, []);

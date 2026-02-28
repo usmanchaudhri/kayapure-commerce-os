@@ -31,8 +31,9 @@ export default function VMTelemetry() {
   const loadData = useCallback(async () => {
     try {
       const [tel, aud] = await Promise.all([fetchVMTelemetry(), fetchVMAudits()]);
-      setTelemetry(tel);
-      setAudits(aud);
+      // Guard: only set data if responses are valid (feature flag may return {enabled: false})
+      if (tel && tel.enabled !== false) setTelemetry(tel);
+      if (Array.isArray(aud)) setAudits(aud);
     } catch (e) {
       console.error("Failed to load VM data:", e);
     } finally {

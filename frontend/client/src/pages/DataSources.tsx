@@ -2,12 +2,8 @@
  * Data Sources — Sensor Node Feed Viewer
  * Design: Mission Control / Aerospace Command Center
  *
- * Displays all data the Sensor Node polls from external services:
- * - Marketing (Meta Ads via MCP)
- * - Commerce (Shopify)
- * - Logistics (Flexport / Cart.com)
- * - Data Warehouse (PostgreSQL metrics + SKUs)
- * - MCP Connection Status
+ * Feature-flag aware: only polls and displays enabled data sources.
+ * Disabled sources show a "not connected" state with lock icon.
  *
  * Each source is shown as a collapsible panel with raw + formatted data,
  * last-polled timestamp, and connection status.
@@ -29,8 +25,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  ChevronDown,
-  ChevronUp,
   Zap,
   Eye,
   Code,
@@ -39,6 +33,7 @@ import {
   TrendingUp,
   Package,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 import {
   fetchAdSpend,
@@ -48,10 +43,11 @@ import {
   fetchMetrics,
   fetchSKUs,
   fetchPnLSummary,
+  fetchFeatureFlags,
 } from "@/lib/api";
 import { toast } from "sonner";
 
-type FeedStatus = "idle" | "loading" | "success" | "error";
+type FeedStatus = "idle" | "loading" | "success" | "error" | "disabled";
 
 interface DataFeed {
   id: string;
@@ -67,6 +63,8 @@ interface DataFeed {
   error: string | null;
   lastPolled: Date | null;
   latencyMs: number | null;
+  /** Which ENABLED_SOURCES key this feed requires. null = always shown */
+  requiredSource: string | null;
 }
 
 const INITIAL_FEEDS: DataFeed[] = [
@@ -84,66 +82,7 @@ const INITIAL_FEEDS: DataFeed[] = [
     error: null,
     lastPolled: null,
     latencyMs: null,
-  },
-  {
-    id: "commerce",
-    name: "Commerce — Shopify",
-    source: "Shopify Admin API",
-    protocol: "REST / GraphQL",
-    icon: ShoppingCart,
-    color: "text-primary",
-    glowClass: "glow-cyan-sm",
-    description: "Daily sales, order count, average order value, and top-selling products.",
-    status: "idle",
-    data: null,
-    error: null,
-    lastPolled: null,
-    latencyMs: null,
-  },
-  {
-    id: "logistics",
-    name: "Logistics — Flexport / Cart.com",
-    source: "Flexport API",
-    protocol: "REST API",
-    icon: Truck,
-    color: "text-emerald-ok",
-    glowClass: "glow-emerald",
-    description: "Inventory levels, shipment status, warehouse stock, and fulfillment ETAs.",
-    status: "idle",
-    data: null,
-    error: null,
-    lastPolled: null,
-    latencyMs: null,
-  },
-  {
-    id: "dwh-metrics",
-    name: "Data Warehouse — P&L Metrics",
-    source: "PostgreSQL (kayapure_db)",
-    protocol: "SQL / SQLAlchemy ORM",
-    icon: Database,
-    color: "text-purple-400",
-    glowClass: "",
-    description: "Historical revenue, COGS, ad spend, shipping costs, and margin calculations.",
-    status: "idle",
-    data: null,
-    error: null,
-    lastPolled: null,
-    latencyMs: null,
-  },
-  {
-    id: "dwh-skus",
-    name: "Data Warehouse — SKU Catalog",
-    source: "PostgreSQL (kayapure_db)",
-    protocol: "SQL / SQLAlchemy ORM",
-    icon: Package,
-    color: "text-purple-400",
-    glowClass: "",
-    description: "Product catalog with COGS, pricing, stock levels, sales velocity, and competitor pricing.",
-    status: "idle",
-    data: null,
-    error: null,
-    lastPolled: null,
-    latencyMs: null,
+    requiredSource: "marketing",
   },
   {
     id: "mcp-status",
@@ -159,6 +98,71 @@ const INITIAL_FEEDS: DataFeed[] = [
     error: null,
     lastPolled: null,
     latencyMs: null,
+    requiredSource: null, // Always shown
+  },
+  {
+    id: "commerce",
+    name: "Commerce — Shopify",
+    source: "Shopify Admin API",
+    protocol: "REST / GraphQL",
+    icon: ShoppingCart,
+    color: "text-primary",
+    glowClass: "glow-cyan-sm",
+    description: "Daily sales, order count, average order value, and top-selling products.",
+    status: "idle",
+    data: null,
+    error: null,
+    lastPolled: null,
+    latencyMs: null,
+    requiredSource: "commerce",
+  },
+  {
+    id: "logistics",
+    name: "Logistics — Flexport / Cart.com",
+    source: "Flexport API",
+    protocol: "REST API",
+    icon: Truck,
+    color: "text-emerald-ok",
+    glowClass: "glow-emerald",
+    description: "Inventory levels, shipment status, warehouse stock, and fulfillment ETAs.",
+    status: "idle",
+    data: null,
+    error: null,
+    lastPolled: null,
+    latencyMs: null,
+    requiredSource: "logistics",
+  },
+  {
+    id: "dwh-metrics",
+    name: "Data Warehouse — P&L Metrics",
+    source: "PostgreSQL (kayapure_db)",
+    protocol: "SQL / SQLAlchemy ORM",
+    icon: Database,
+    color: "text-purple-400",
+    glowClass: "",
+    description: "Historical revenue, COGS, ad spend, shipping costs, and margin calculations.",
+    status: "idle",
+    data: null,
+    error: null,
+    lastPolled: null,
+    latencyMs: null,
+    requiredSource: "dwh",
+  },
+  {
+    id: "dwh-skus",
+    name: "Data Warehouse — SKU Catalog",
+    source: "PostgreSQL (kayapure_db)",
+    protocol: "SQL / SQLAlchemy ORM",
+    icon: Package,
+    color: "text-purple-400",
+    glowClass: "",
+    description: "Product catalog with COGS, pricing, stock levels, sales velocity, and competitor pricing.",
+    status: "idle",
+    data: null,
+    error: null,
+    lastPolled: null,
+    latencyMs: null,
+    requiredSource: "dwh",
   },
 ];
 
@@ -166,7 +170,29 @@ export default function DataSources() {
   const [feeds, setFeeds] = useState<DataFeed[]>(INITIAL_FEEDS);
   const [isPollingAll, setIsPollingAll] = useState(false);
   const [expandedRaw, setExpandedRaw] = useState<Record<string, boolean>>({});
-  const [activeTab, setActiveTab] = useState("formatted");
+  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [flagsLoaded, setFlagsLoaded] = useState(false);
+
+  // Fetch feature flags on mount
+  useEffect(() => {
+    fetchFeatureFlags()
+      .then((flags) => {
+        setEnabledSources(flags.enabled_sources || []);
+        setFlagsLoaded(true);
+      })
+      .catch(() => {
+        // If endpoint doesn't exist, show all
+        setEnabledSources([]);
+        setFlagsLoaded(true);
+      });
+  }, []);
+
+  const isSourceEnabled = (requiredSource: string | null): boolean => {
+    if (requiredSource === null) return true; // No requirement = always enabled
+    if (!flagsLoaded) return true; // Before flags load, assume enabled
+    if (enabledSources.length === 0 && flagsLoaded) return true; // No flags = show all
+    return enabledSources.includes(requiredSource);
+  };
 
   // Poll a single feed
   const pollFeed = useCallback(async (feedId: string) => {
@@ -220,28 +246,35 @@ export default function DataSources() {
     }
   }, []);
 
-  // Poll all feeds
+  // Poll all enabled feeds
   const pollAll = useCallback(async () => {
     setIsPollingAll(true);
-    toast.info("Polling all data sources...");
-    const feedIds = INITIAL_FEEDS.map((f) => f.id);
-    await Promise.allSettled(feedIds.map((id) => pollFeed(id)));
+    toast.info("Polling enabled data sources...");
+    const enabledFeedIds = INITIAL_FEEDS
+      .filter((f) => isSourceEnabled(f.requiredSource))
+      .map((f) => f.id);
+    await Promise.allSettled(enabledFeedIds.map((id) => pollFeed(id)));
     setIsPollingAll(false);
-    toast.success("All data sources polled");
-  }, [pollFeed]);
+    toast.success("Data sources polled");
+  }, [pollFeed, enabledSources, flagsLoaded]);
 
-  // Auto-poll on mount
+  // Auto-poll enabled feeds on mount (after flags load)
   useEffect(() => {
-    pollAll();
-  }, []);
+    if (flagsLoaded) {
+      pollAll();
+    }
+  }, [flagsLoaded]);
 
   const toggleRaw = (feedId: string) => {
     setExpandedRaw((prev) => ({ ...prev, [feedId]: !prev[feedId] }));
   };
 
-  const successCount = feeds.filter((f) => f.status === "success").length;
-  const errorCount = feeds.filter((f) => f.status === "error").length;
-  const loadingCount = feeds.filter((f) => f.status === "loading").length;
+  // Count only enabled feeds
+  const enabledFeeds = feeds.filter((f) => isSourceEnabled(f.requiredSource));
+  const disabledFeeds = feeds.filter((f) => !isSourceEnabled(f.requiredSource));
+  const successCount = enabledFeeds.filter((f) => f.status === "success").length;
+  const errorCount = enabledFeeds.filter((f) => f.status === "error").length;
+  const loadingCount = enabledFeeds.filter((f) => f.status === "loading").length;
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -256,7 +289,7 @@ export default function DataSources() {
           </div>
           <h1 className="text-2xl font-bold text-foreground">Data Sources</h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-            All external data feeds polled by the Sensor Node. Each source shows live connection status, response latency, and the raw data returned.
+            All external data feeds polled by the Sensor Node. Disabled sources can be enabled by updating <code className="text-primary/80 text-xs">ENABLED_SOURCES</code> in the backend <code className="text-primary/80 text-xs">.env</code> file.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -280,6 +313,12 @@ export default function DataSources() {
                 {loadingCount}
               </Badge>
             )}
+            {disabledFeeds.length > 0 && (
+              <Badge variant="outline" className="text-muted-foreground border-border">
+                <Lock className="w-3 h-3 mr-1" />
+                {disabledFeeds.length} OFF
+              </Badge>
+            )}
           </div>
           <Button
             onClick={pollAll}
@@ -297,9 +336,9 @@ export default function DataSources() {
         </div>
       </div>
 
-      {/* Feed Cards */}
+      {/* Enabled Feed Cards */}
       <div className="space-y-4">
-        {feeds.map((feed) => (
+        {enabledFeeds.map((feed) => (
           <FeedCard
             key={feed.id}
             feed={feed}
@@ -309,12 +348,65 @@ export default function DataSources() {
           />
         ))}
       </div>
+
+      {/* Disabled Sources Section */}
+      {disabledFeeds.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              Disabled Sources
+            </h2>
+            <span className="text-[10px] font-mono text-muted-foreground/60">
+              Enable via ENABLED_SOURCES in backend .env
+            </span>
+          </div>
+          <div className="space-y-2">
+            {disabledFeeds.map((feed) => (
+              <DisabledFeedCard key={feed.id} feed={feed} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ========================================
-// Feed Card Component
+// Disabled Feed Card (compact, dimmed)
+// ========================================
+function DisabledFeedCard({ feed }: { feed: DataFeed }) {
+  const Icon = feed.icon;
+  return (
+    <Card className="panel-border opacity-40">
+      <CardHeader className="py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-accent text-muted-foreground">
+              <Icon className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold text-muted-foreground">
+                {feed.name}
+              </CardTitle>
+              <span className="text-[10px] font-mono text-muted-foreground/60">
+                {feed.source} • {feed.protocol}
+              </span>
+            </div>
+          </div>
+          <Badge variant="outline" className="text-muted-foreground text-[10px] font-mono border-border">
+            <Lock className="w-3 h-3 mr-1" />
+            NOT CONNECTED
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground/60 mt-1">{feed.description}</p>
+      </CardHeader>
+    </Card>
+  );
+}
+
+// ========================================
+// Feed Card Component (enabled sources)
 // ========================================
 function FeedCard({
   feed,
@@ -351,6 +443,12 @@ function FeedCard({
       <Badge variant="outline" className="text-crimson-alert text-[10px] font-mono">
         <XCircle className="w-3 h-3 mr-1" />
         ERROR
+      </Badge>
+    ),
+    disabled: (
+      <Badge variant="outline" className="text-muted-foreground text-[10px] font-mono">
+        <Lock className="w-3 h-3 mr-1" />
+        DISABLED
       </Badge>
     ),
   };
@@ -474,6 +572,7 @@ function FormattedView({ feedId, data }: { feedId: string; data: any }) {
 function MarketingView({ data }: { data: any }) {
   const campaigns = data?.campaigns || [];
   const summary = data?.summary || {};
+  const dailyBreakdown = data?.daily_breakdown || [];
 
   return (
     <div className="space-y-4">
@@ -485,39 +584,75 @@ function MarketingView({ data }: { data: any }) {
         <MiniKPI label="Source" value={summary.source === "mcp" ? "LIVE MCP" : summary.source?.toUpperCase() || "—"} icon={Zap} color={summary.source === "mcp" ? "text-emerald-ok" : "text-muted-foreground"} />
       </div>
 
+      {/* Daily Breakdown Table */}
+      {dailyBreakdown.length > 0 && (
+        <div>
+          <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Daily Breakdown</h3>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-accent/30 text-muted-foreground font-mono uppercase tracking-wider">
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-right px-3 py-2">Spend</th>
+                  <th className="text-right px-3 py-2">Clicks</th>
+                  <th className="text-right px-3 py-2">Impr.</th>
+                  <th className="text-right px-3 py-2">CTR</th>
+                  <th className="text-right px-3 py-2">CPC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyBreakdown.map((d: any, i: number) => (
+                  <tr key={i} className="border-t border-border hover:bg-accent/10 transition-colors">
+                    <td className="px-3 py-2 font-mono text-foreground">{d.date}</td>
+                    <td className="px-3 py-2 text-right font-mono text-amber-warn">${Number(d.spend || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-foreground">{Number(d.clicks || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{Number(d.impressions || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right font-mono text-primary">{Number(d.ctr || 0).toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">${Number(d.cpc || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Campaign Table */}
       {campaigns.length > 0 && (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-accent/30 text-muted-foreground font-mono uppercase tracking-wider">
-                <th className="text-left px-3 py-2">Campaign</th>
-                <th className="text-right px-3 py-2">Spend</th>
-                <th className="text-right px-3 py-2">Clicks</th>
-                <th className="text-right px-3 py-2">Impr.</th>
-                <th className="text-right px-3 py-2">CTR</th>
-                <th className="text-right px-3 py-2">CPC</th>
-                <th className="text-center px-3 py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {campaigns.map((c: any, i: number) => (
-                <tr key={i} className="border-t border-border hover:bg-accent/10 transition-colors">
-                  <td className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{c.campaign_name || c.name || "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-amber-warn">${Number(c.spend || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-foreground">{Number(c.clicks || 0).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">{Number(c.impressions || 0).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right font-mono text-primary">{Number(c.ctr || 0).toFixed(2)}%</td>
-                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">${Number(c.cpc || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2 text-center">
-                    <Badge variant="outline" className={`text-[9px] ${c.status === "ACTIVE" ? "text-emerald-ok border-emerald-ok/30" : "text-muted-foreground"}`}>
-                      {c.status || "—"}
-                    </Badge>
-                  </td>
+        <div>
+          <h3 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-2">Campaigns</h3>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-accent/30 text-muted-foreground font-mono uppercase tracking-wider">
+                  <th className="text-left px-3 py-2">Campaign</th>
+                  <th className="text-right px-3 py-2">Spend</th>
+                  <th className="text-right px-3 py-2">Clicks</th>
+                  <th className="text-right px-3 py-2">Impr.</th>
+                  <th className="text-right px-3 py-2">CTR</th>
+                  <th className="text-right px-3 py-2">CPC</th>
+                  <th className="text-center px-3 py-2">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {campaigns.map((c: any, i: number) => (
+                  <tr key={i} className="border-t border-border hover:bg-accent/10 transition-colors">
+                    <td className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{c.campaign_name || c.name || "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-amber-warn">${Number(c.spend || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-foreground">{Number(c.clicks || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{Number(c.impressions || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right font-mono text-primary">{Number(c.ctr || 0).toFixed(2)}%</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">${Number(c.cpc || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <Badge variant="outline" className={`text-[9px] ${c.status === "ACTIVE" ? "text-emerald-ok border-emerald-ok/30" : "text-muted-foreground"}`}>
+                        {c.status || "—"}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

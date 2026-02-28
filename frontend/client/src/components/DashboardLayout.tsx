@@ -2,6 +2,7 @@
  * Mission Control Dashboard Layout
  * Persistent sidebar + top status bar + main content area
  * Includes backend connection status indicator
+ * Feature-flag aware: dims/hides nav items for disabled sources
  */
 import { ReactNode, useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
@@ -20,16 +21,30 @@ import {
   WifiOff,
   Loader2,
   Radio,
+  Lock,
 } from "lucide-react";
-import { testBackendConnection, getApiBase } from "@/lib/api";
+import { testBackendConnection, getApiBase, fetchFeatureFlags } from "@/lib/api";
 
-const NAV_ITEMS = [
+/**
+ * Each nav item can optionally declare which data source it requires.
+ * If `requiredSource` is set and that source is disabled, the item
+ * appears dimmed with a lock icon and is not clickable.
+ * Items without `requiredSource` are always visible.
+ */
+interface NavItem {
+  path: string;
+  label: string;
+  icon: any;
+  requiredSource?: string;
+}
+
+const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "Control Tower", icon: LayoutDashboard },
   { path: "/actions", label: "Action Queue", icon: ListChecks },
-  { path: "/inventory", label: "Inventory", icon: Package },
-  { path: "/vm-telemetry", label: "VM Telemetry", icon: Server },
+  { path: "/inventory", label: "Inventory", icon: Package, requiredSource: "dwh" },
+  { path: "/vm-telemetry", label: "VM Telemetry", icon: Server, requiredSource: "vm" },
   { path: "/data-sources", label: "Data Sources", icon: Radio },
-  { path: "/diagnostic", label: "Diagnostic", icon: Stethoscope },
+  { path: "/diagnostic", label: "Diagnostic", icon: Stethoscope, requiredSource: "diagnostic" },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -40,6 +55,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
+  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [flagsLoaded, setFlagsLoaded] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -59,10 +76,33 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [checkBackend]);
 
+  // Fetch feature flags on mount and when backend comes online
+  useEffect(() => {
+    if (backendStatus === "online") {
+      fetchFeatureFlags()
+        .then((flags) => {
+          setEnabledSources(flags.enabled_sources || []);
+          setFlagsLoaded(true);
+        })
+        .catch(() => {
+          // If feature flags endpoint doesn't exist, show all
+          setEnabledSources([]);
+          setFlagsLoaded(true);
+        });
+    }
+  }, [backendStatus]);
+
   // Re-check when navigating (in case user just saved settings)
   useEffect(() => {
     checkBackend();
   }, [location, checkBackend]);
+
+  const isSourceEnabled = (source?: string): boolean => {
+    if (!source) return true; // No source requirement = always visible
+    if (!flagsLoaded) return true; // Before flags load, show all
+    if (enabledSources.length === 0 && flagsLoaded) return true; // No flags endpoint = show all
+    return enabledSources.includes(source);
+  };
 
   const statusIndicator = {
     checking: {
@@ -114,6 +154,29 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {NAV_ITEMS.map((item) => {
             const isActive = location === item.path;
             const Icon = item.icon;
+            const enabled = isSourceEnabled(item.requiredSource);
+
+            if (!enabled) {
+              // Disabled source: dimmed, not clickable, lock icon
+              return (
+                <div
+                  key={item.path}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm opacity-35 cursor-not-allowed select-none"
+                  title={`${item.label} — source not connected`}
+                >
+                  <Icon className="w-4.5 h-4.5 shrink-0 text-muted-foreground" />
+                  {!collapsed && (
+                    <>
+                      <span className="truncate font-medium text-muted-foreground">
+                        {item.label}
+                      </span>
+                      <Lock className="w-3 h-3 ml-auto text-muted-foreground" />
+                    </>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Link key={item.path} href={item.path}>
                 <div
