@@ -1,8 +1,9 @@
 /**
  * Mission Control Dashboard Layout
  * Persistent sidebar + top status bar + main content area
+ * Includes backend connection status indicator
  */
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -14,7 +15,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Activity,
+  Settings2,
+  Wifi,
+  WifiOff,
+  Loader2,
 } from "lucide-react";
+import { testBackendConnection, getApiBase } from "@/lib/api";
 
 const NAV_ITEMS = [
   { path: "/", label: "Control Tower", icon: LayoutDashboard },
@@ -22,17 +28,59 @@ const NAV_ITEMS = [
   { path: "/inventory", label: "Inventory", icon: Package },
   { path: "/vm-telemetry", label: "VM Telemetry", icon: Server },
   { path: "/diagnostic", label: "Diagnostic", icon: Stethoscope },
+  { path: "/settings", label: "Settings", icon: Settings2 },
 ];
+
+type BackendStatus = "checking" | "online" | "offline";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Check backend connectivity on mount and every 30 seconds
+  const checkBackend = useCallback(async () => {
+    setBackendStatus("checking");
+    const result = await testBackendConnection();
+    setBackendStatus(result.ok ? "online" : "offline");
+  }, []);
+
+  useEffect(() => {
+    checkBackend();
+    const interval = setInterval(checkBackend, 30000);
+    return () => clearInterval(interval);
+  }, [checkBackend]);
+
+  // Re-check when navigating (in case user just saved settings)
+  useEffect(() => {
+    checkBackend();
+  }, [location, checkBackend]);
+
+  const statusIndicator = {
+    checking: {
+      icon: <Loader2 className="w-3 h-3 animate-spin text-primary" />,
+      text: "CHECKING",
+      dotClass: "bg-primary status-dot",
+    },
+    online: {
+      icon: <Wifi className="w-3 h-3 text-emerald-ok" />,
+      text: "SYSTEMS NOMINAL",
+      dotClass: "bg-emerald-ok status-dot",
+    },
+    offline: {
+      icon: <WifiOff className="w-3 h-3 text-crimson-alert" />,
+      text: "BACKEND OFFLINE",
+      dotClass: "bg-crimson-alert status-dot",
+    },
+  };
+
+  const si = statusIndicator[backendStatus];
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -107,12 +155,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {NAV_ITEMS.find((n) => n.path === location)?.label || "Dashboard"}
             </h2>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <div className="status-dot bg-emerald-ok" />
-              <span className="font-mono">SYSTEMS NOMINAL</span>
+              <div className={`w-2 h-2 rounded-full shrink-0 ${si.dotClass}`} />
+              <span className="font-mono">{si.text}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-5">
+            {/* Backend URL indicator */}
+            {backendStatus === "offline" && (
+              <Link href="/settings">
+                <span className="text-[10px] font-mono text-crimson-alert hover:underline cursor-pointer">
+                  Configure Backend →
+                </span>
+              </Link>
+            )}
             <div className="flex items-center gap-2 text-xs">
               <Activity className="w-3.5 h-3.5 text-primary" />
               <span className="font-mono text-muted-foreground">
@@ -124,6 +180,21 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
+
+        {/* Offline Banner */}
+        {backendStatus === "offline" && (
+          <div className="bg-crimson-alert/10 border-b border-crimson-alert/20 px-6 py-2 flex items-center gap-3">
+            <WifiOff className="w-4 h-4 text-crimson-alert shrink-0" />
+            <p className="text-xs text-crimson-alert">
+              <span className="font-semibold">Backend unreachable</span> at{" "}
+              <code className="text-crimson-alert/80">{getApiBase()}</code>.{" "}
+              <Link href="/settings">
+                <span className="underline cursor-pointer font-medium">Go to Settings</span>
+              </Link>{" "}
+              to configure the correct backend URL.
+            </p>
+          </div>
+        )}
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-6">

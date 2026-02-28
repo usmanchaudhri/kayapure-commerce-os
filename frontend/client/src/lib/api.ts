@@ -2,45 +2,130 @@
  * KayaPure Commerce OS - API Client
  * Connects to the FastAPI backend.
  *
- * The API_BASE is determined by:
- * 1. VITE_API_BASE env var (if set)
- * 2. Auto-detect: if running on a Manus proxy domain, swap the port prefix
- * 3. Fallback: http://localhost:8000
+ * Backend URL resolution priority:
+ * 1. localStorage "kayapure_api_base" (user-configured via Settings page)
+ * 2. VITE_API_BASE env var (build-time)
+ * 3. Auto-detect Manus dev proxy (3000- → 8000-)
+ * 4. Fallback: http://localhost:8000
  */
 
+const STORAGE_KEY = "kayapure_api_base";
+const WS_STORAGE_KEY = "kayapure_ws_base";
+
 function resolveApiBase(): string {
-  // 1. Explicit env var
+  // 1. User-configured via Settings
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) return stored.replace(/\/$/, "");
+
+  // 2. Explicit env var
   const envBase = import.meta.env.VITE_API_BASE;
   if (envBase) return envBase.replace(/\/$/, "");
 
-  // 2. Auto-detect Manus proxy: replace "3000-" prefix with "8000-"
+  // 3. Auto-detect Manus dev proxy: replace "3000-" prefix with "8000-"
   const host = window.location.hostname;
-  if (host.includes("manus.computer") || host.includes("manus.space")) {
+  if (
+    (host.includes("manus.computer") || host.includes("manus.space")) &&
+    host.startsWith("3000-")
+  ) {
     const backendHost = host.replace(/^3000-/, "8000-");
     return `${window.location.protocol}//${backendHost}`;
   }
 
-  // 3. Fallback for local development
+  // 4. Fallback for local development
   return "http://localhost:8000";
 }
 
 function resolveWsBase(): string {
-  const envWs = import.meta.env.VITE_WS_BASE;
-  if (envWs) return envWs.replace(/\/$/, "");
+  // 1. User-configured
+  const stored = localStorage.getItem(WS_STORAGE_KEY);
+  if (stored) return stored.replace(/\/$/, "");
 
-  const host = window.location.hostname;
-  if (host.includes("manus.computer") || host.includes("manus.space")) {
-    const backendHost = host.replace(/^3000-/, "8000-");
-    // Manus proxy uses HTTPS, so use wss://
-    return `wss://${backendHost}`;
+  // Derive from API base
+  const apiBase = resolveApiBase();
+  try {
+    const url = new URL(apiBase);
+    const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return `${wsProtocol}//${url.host}`;
+  } catch {
+    return "ws://localhost:8000";
   }
-
-  return "ws://localhost:8000";
 }
 
-const API_BASE = resolveApiBase();
-const WS_BASE = resolveWsBase();
+let API_BASE = resolveApiBase();
+let WS_BASE = resolveWsBase();
 
+/** Get the current API base URL */
+export function getApiBase(): string {
+  return API_BASE;
+}
+
+/** Get the current WebSocket base URL */
+export function getWsBase(): string {
+  return WS_BASE;
+}
+
+/** Update the backend URL at runtime (called from Settings page) */
+export function setBackendUrl(httpUrl: string): void {
+  const cleanUrl = httpUrl.replace(/\/$/, "");
+  localStorage.setItem(STORAGE_KEY, cleanUrl);
+
+  // Auto-derive WS URL
+  try {
+    const url = new URL(cleanUrl);
+    const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${url.host}`;
+    localStorage.setItem(WS_STORAGE_KEY, wsUrl);
+  } catch {
+    // If URL parsing fails, clear WS override
+    localStorage.removeItem(WS_STORAGE_KEY);
+  }
+
+  // Re-resolve
+  API_BASE = resolveApiBase();
+  WS_BASE = resolveWsBase();
+}
+
+/** Clear the stored backend URL and revert to auto-detection */
+export function clearBackendUrl(): void {
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(WS_STORAGE_KEY);
+  API_BASE = resolveApiBase();
+  WS_BASE = resolveWsBase();
+}
+
+/** Test connectivity to the backend */
+export async function testBackendConnection(url?: string): Promise<{
+  ok: boolean;
+  latency?: number;
+  error?: string;
+  data?: any;
+}> {
+  const base = url ? url.replace(/\/$/, "") : API_BASE;
+  const start = performance.now();
+  try {
+    const res = await fetch(`${base}/api/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(8000),
+    });
+    const latency = Math.round(performance.now() - start);
+    if (!res.ok) {
+      return { ok: false, latency, error: `HTTP ${res.status}: ${res.statusText}` };
+    }
+    const data = await res.json();
+    return { ok: true, latency, data };
+  } catch (e: any) {
+    const latency = Math.round(performance.now() - start);
+    const msg =
+      e.name === "TimeoutError"
+        ? "Connection timed out (8s)"
+        : e.message === "Failed to fetch"
+        ? "Cannot reach backend — check URL and CORS settings"
+        : e.message;
+    return { ok: false, latency, error: msg };
+  }
+}
+
+// --- Core fetch helper ---
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },

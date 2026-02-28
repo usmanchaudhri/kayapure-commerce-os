@@ -10,6 +10,7 @@ import ActionQueue from "./pages/ActionQueue";
 import DiagnosticStorefront from "./pages/DiagnosticStorefront";
 import VMTelemetry from "./pages/VMTelemetry";
 import Inventory from "./pages/Inventory";
+import Settings from "./pages/Settings";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
         <Route path="/diagnostic" component={DiagnosticStorefront} />
         <Route path="/vm-telemetry" component={VMTelemetry} />
         <Route path="/inventory" component={Inventory} />
+        <Route path="/settings" component={Settings} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
