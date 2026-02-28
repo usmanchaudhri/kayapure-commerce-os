@@ -50,6 +50,7 @@ class FacebookAdsClient:
         self._account_id = account_id
         self._http_client: Optional[httpx.AsyncClient] = None
         self._initialized = False
+        self.currency: str = "USD"  # Set during initialize() from account info
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
@@ -89,6 +90,7 @@ class FacebookAdsClient:
 
             data = response.json()
             self._initialized = True
+            self.currency = data.get("currency", "USD")
             logger.info(
                 f"Facebook Ads client initialized in {elapsed:.1f}ms — "
                 f"account: {data.get('name', 'unknown')} ({self._account_id}), "

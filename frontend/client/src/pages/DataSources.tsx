@@ -569,6 +569,18 @@ function FormattedView({ feedId, data }: { feedId: string; data: any }) {
 }
 
 // --- Marketing (Meta Ads) ---
+// Currency symbol lookup — maps ISO 4217 codes to display symbols
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", PKR: "Rs", GBP: "\u00a3", EUR: "\u20ac", INR: "\u20b9",
+  AED: "AED", SAR: "SAR", CAD: "C$", AUD: "A$", JPY: "\u00a5",
+  CNY: "\u00a5", BDT: "\u09f3", MYR: "RM", SGD: "S$", TRY: "\u20ba",
+};
+
+function getCurrencySymbol(code?: string): string {
+  if (!code) return "$";
+  return CURRENCY_SYMBOLS[code.toUpperCase()] || code + " ";
+}
+
 function MarketingView({ data }: { data: any }) {
   const campaigns = data?.campaigns || [];
   // Summary fields are at the root level of the API response (not nested under "summary")
@@ -576,13 +588,15 @@ function MarketingView({ data }: { data: any }) {
   const totalClicks = data?.total_clicks ?? data?.summary?.total_clicks;
   const avgCtr = data?.avg_ctr ?? data?.summary?.avg_ctr;
   const source = data?.source ?? data?.summary?.source;
+  const currency = data?.currency || "USD";
+  const sym = getCurrencySymbol(currency);
   const dailyBreakdown = data?.daily_breakdown || [];
 
   return (
     <div className="space-y-4">
       {/* Summary Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <MiniKPI label="Total Spend" value={`$${totalSpend?.toFixed(2) || "0"}`} icon={DollarSign} color="text-amber-warn" />
+        <MiniKPI label="Total Spend" value={`${sym}${totalSpend?.toFixed(2) || "0"}`} icon={DollarSign} color="text-amber-warn" />
         <MiniKPI label="Total Clicks" value={totalClicks?.toLocaleString() || "0"} icon={BarChart3} color="text-primary" />
         <MiniKPI label="Avg CTR" value={`${avgCtr?.toFixed(2) || "0"}%`} icon={TrendingUp} color="text-emerald-ok" />
         <MiniKPI label="Source" value={source === "facebook_api" ? "LIVE API" : source?.toUpperCase() || "—"} icon={Zap} color={source === "facebook_api" ? "text-emerald-ok" : "text-muted-foreground"} />
@@ -608,11 +622,11 @@ function MarketingView({ data }: { data: any }) {
                 {dailyBreakdown.map((d: any, i: number) => (
                   <tr key={i} className="border-t border-border hover:bg-accent/10 transition-colors">
                     <td className="px-3 py-2 font-mono text-foreground">{d.date}</td>
-                    <td className="px-3 py-2 text-right font-mono text-amber-warn">${Number(d.spend || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-amber-warn">{sym}{Number(d.spend || 0).toFixed(2)}</td>
                     <td className="px-3 py-2 text-right font-mono text-foreground">{Number(d.clicks || 0).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{Number(d.impressions || 0).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right font-mono text-primary">{Number(d.ctr || 0).toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">${Number(d.cpc || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{sym}{Number(d.cpc || 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,13 +656,18 @@ function MarketingView({ data }: { data: any }) {
                 {campaigns.map((c: any, i: number) => (
                   <tr key={i} className="border-t border-border hover:bg-accent/10 transition-colors">
                     <td className="px-3 py-2 text-foreground font-medium max-w-[200px] truncate">{c.campaign_name || c.name || "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono text-amber-warn">${Number(c.spend || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-amber-warn">{sym}{Number(c.spend || 0).toFixed(2)}</td>
                     <td className="px-3 py-2 text-right font-mono text-foreground">{Number(c.clicks || 0).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{Number(c.impressions || 0).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right font-mono text-primary">{Number(c.ctr || 0).toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">${Number(c.cpc || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{sym}{Number(c.cpc || 0).toFixed(2)}</td>
                     <td className="px-3 py-2 text-center">
-                      <Badge variant="outline" className={`text-[9px] ${c.status === "ACTIVE" ? "text-emerald-ok border-emerald-ok/30" : "text-muted-foreground"}`}>
+                      <Badge variant="outline" className={`text-[9px] ${
+                        c.status === "ACTIVE" ? "text-emerald-ok border-emerald-ok/30" :
+                        c.status === "PAUSED" ? "text-amber-warn border-amber-warn/30" :
+                        c.status === "ARCHIVED" ? "text-red-400 border-red-400/30" :
+                        "text-muted-foreground"
+                      }`}>
                         {c.status || "—"}
                       </Badge>
                     </td>

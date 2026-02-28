@@ -31,6 +31,7 @@ class MarketingService:
         self._fb_client = None  # Set during app startup via configure()
         self._meta_account_id: Optional[str] = None
         self._use_facebook = False
+        self._currency: str = "USD"  # Account currency (PKR, USD, GBP, etc.)
 
         # Fallback mock campaigns (used when Facebook API is not available)
         self._mock_campaigns = {
@@ -89,6 +90,9 @@ class MarketingService:
         self._fb_client = fb_client
         self._meta_account_id = meta_account_id
         self._use_facebook = fb_client is not None and meta_account_id is not None
+        # Read currency from the Facebook client (set during initialize())
+        if fb_client is not None and hasattr(fb_client, 'currency'):
+            self._currency = fb_client.currency
         mode = "FACEBOOK API (live Meta Ads)" if self._use_facebook else "MOCK (fallback data)"
         logger.info(
             f"MarketingService configured in {mode} mode",
@@ -382,6 +386,7 @@ class MarketingService:
 
         return {
             "date": date.strftime("%Y-%m-%d"),
+            "currency": self._currency,
             "total_spend": round(total_spend if total_spend > 0 else meta_spend, 2),
             "platform_breakdown": {
                 "meta": round(meta_spend, 2),
@@ -464,6 +469,15 @@ class MarketingService:
             fields="campaign_id,campaign_name,spend,impressions,clicks,cpc,ctr,actions,purchase_roas",
         )
 
+        # Fetch campaign metadata (status, objective) to enrich insights
+        campaign_meta_response = await self._fb_client.get_campaigns()
+        campaign_meta_map = {}
+        for cm in campaign_meta_response.get("data", []):
+            campaign_meta_map[cm.get("id", "")] = {
+                "status": cm.get("status", "UNKNOWN"),
+                "objective": cm.get("objective", ""),
+            }
+
         # Parse daily breakdown
         daily_rows = self._extract_data_rows(daily_response)
         daily_breakdown = []
@@ -519,10 +533,16 @@ class MarketingService:
             if isinstance(purchase_roas, list) and purchase_roas:
                 roas = self._safe_float(purchase_roas[0].get("value", 0))
 
+            # Look up campaign status from metadata
+            camp_id = camp.get("campaign_id", "unknown")
+            meta_info = campaign_meta_map.get(camp_id, {})
+
             campaigns_summary.append({
-                "campaign_id": camp.get("campaign_id", "unknown"),
+                "campaign_id": camp_id,
                 "name": camp.get("campaign_name", "Unknown Campaign"),
                 "platform": "meta",
+                "status": meta_info.get("status", "UNKNOWN"),
+                "objective": meta_info.get("objective", ""),
                 "spend": round(spend, 2),
                 "clicks": clicks,
                 "impressions": impressions,
@@ -542,6 +562,7 @@ class MarketingService:
                 "end": until_str,
                 "days": days,
             },
+            "currency": self._currency,
             "total_spend": round(total_spend, 2),
             "total_impressions": total_impressions,
             "total_clicks": total_clicks,
