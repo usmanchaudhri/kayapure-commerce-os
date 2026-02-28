@@ -571,17 +571,21 @@ function FormattedView({ feedId, data }: { feedId: string; data: any }) {
 // --- Marketing (Meta Ads) ---
 function MarketingView({ data }: { data: any }) {
   const campaigns = data?.campaigns || [];
-  const summary = data?.summary || {};
+  // Summary fields are at the root level of the API response (not nested under "summary")
+  const totalSpend = data?.total_spend ?? data?.summary?.total_spend;
+  const totalClicks = data?.total_clicks ?? data?.summary?.total_clicks;
+  const avgCtr = data?.avg_ctr ?? data?.summary?.avg_ctr;
+  const source = data?.source ?? data?.summary?.source;
   const dailyBreakdown = data?.daily_breakdown || [];
 
   return (
     <div className="space-y-4">
       {/* Summary Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <MiniKPI label="Total Spend" value={`$${summary.total_spend?.toFixed(2) || "0"}`} icon={DollarSign} color="text-amber-warn" />
-        <MiniKPI label="Total Clicks" value={summary.total_clicks?.toLocaleString() || "0"} icon={BarChart3} color="text-primary" />
-        <MiniKPI label="Avg CTR" value={`${summary.avg_ctr?.toFixed(2) || "0"}%`} icon={TrendingUp} color="text-emerald-ok" />
-        <MiniKPI label="Source" value={summary.source === "facebook_api" ? "LIVE API" : summary.source?.toUpperCase() || "—"} icon={Zap} color={summary.source === "facebook_api" ? "text-emerald-ok" : "text-muted-foreground"} />
+        <MiniKPI label="Total Spend" value={`$${totalSpend?.toFixed(2) || "0"}`} icon={DollarSign} color="text-amber-warn" />
+        <MiniKPI label="Total Clicks" value={totalClicks?.toLocaleString() || "0"} icon={BarChart3} color="text-primary" />
+        <MiniKPI label="Avg CTR" value={`${avgCtr?.toFixed(2) || "0"}%`} icon={TrendingUp} color="text-emerald-ok" />
+        <MiniKPI label="Source" value={source === "facebook_api" ? "LIVE API" : source?.toUpperCase() || "—"} icon={Zap} color={source === "facebook_api" ? "text-emerald-ok" : "text-muted-foreground"} />
       </div>
 
       {/* Daily Breakdown Table */}
