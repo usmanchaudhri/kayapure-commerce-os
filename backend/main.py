@@ -838,9 +838,16 @@ async def get_daily_sales():
 
 
 @app.get("/api/marketing/ad-spend")
-async def get_ad_spend():
-    """Get today's ad spend data."""
-    return await marketing_service.get_ad_spend_summary()
+async def get_ad_spend(days: int = Query(default=7, ge=1, le=90, description="Number of days of ad spend data to return (1-90)")):
+    """
+    Get ad spend data.
+    - days=1: returns today's data only (legacy behavior)
+    - days=7: returns last 7 days with daily breakdown (default)
+    - days=30: returns last 30 days with daily breakdown
+    """
+    if days == 1:
+        return await marketing_service.get_ad_spend_summary()
+    return await marketing_service.get_ad_spend_history(days=days)
 
 
 @app.get("/api/logistics/inventory")

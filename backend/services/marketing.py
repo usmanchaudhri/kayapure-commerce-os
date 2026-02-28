@@ -12,9 +12,10 @@ the service falls back to mock data so the system remains functional during
 development and testing.
 """
 
+import asyncio
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from utils.logging_config import get_logger
@@ -158,6 +159,45 @@ class MarketingService:
         """Get total daily ad spend across all campaigns."""
         summary = await self.get_ad_spend_summary()
         return summary.get("total_spend", 0.0)
+
+    async def get_ad_spend_history(self, days: int = 7) -> Dict[str, Any]:
+        """
+        Get ad spend data for the last N days with daily breakdown.
+        Returns both per-day summaries and aggregate totals.
+        """
+        start_time = time.perf_counter()
+        if self._use_mcp:
+            try:
+                result = await self._mcp_get_ad_spend_history(days)
+                elapsed = (time.perf_counter() - start_time) * 1000
+                logger.info(
+                    f"Ad spend history ({days} days) fetched via MCP in {elapsed:.1f}ms: "
+                    f"${result.get('total_spend', 0):.2f} total spend, "
+                    f"{len(result.get('daily_breakdown', []))} days",
+                    extra={
+                        "source": "mcp",
+                        "days": days,
+                        "total_spend": result.get("total_spend", 0),
+                        "daily_count": len(result.get("daily_breakdown", [])),
+                        "duration_ms": round(elapsed, 1),
+                    },
+                )
+                return result
+            except Exception as e:
+                elapsed = (time.perf_counter() - start_time) * 1000
+                logger.warning(
+                    f"MCP history call failed after {elapsed:.1f}ms, falling back to mock: {e}",
+                    extra={"error": str(e), "duration_ms": round(elapsed, 1), "fallback": True},
+                )
+                return await self._mock_get_ad_spend_history(days)
+        else:
+            result = await self._mock_get_ad_spend_history(days)
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                f"Ad spend history ({days} days) fetched via MOCK in {elapsed:.1f}ms",
+                extra={"source": "mock", "days": days, "duration_ms": round(elapsed, 1)},
+            )
+            return result
 
     # ================================================================
     # Additional MCP-powered methods (new capabilities)
@@ -415,6 +455,264 @@ class MarketingService:
             "details": results,
             "updated_at": datetime.utcnow().isoformat(),
             "source": "meta_ads_mcp",
+        }
+
+    async def _mcp_get_ad_spend_history(self, days: int = 7) -> Dict[str, Any]:
+        """
+        Fetch N days of ad spend data from Meta Ads via MCP.
+        Uses parallel single-day calls since the Pipeboard MCP server does not
+        support the time_increment parameter for daily granularity.
+        """
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days - 1)
+
+        since_str = start_date.strftime("%Y-%m-%d")
+        until_str = end_date.strftime("%Y-%m-%d")
+
+        # --- Step 1: Fetch daily account-level data in parallel ---
+        async def fetch_day(day_offset: int) -> Dict[str, Any]:
+            """Fetch account-level insights for a single day."""
+            day = start_date + timedelta(days=day_offset)
+            day_str = day.strftime("%Y-%m-%d")
+            try:
+                result = await self._mcp_client.call_tool(
+                    "get_insights",
+                    {
+                        "object_id": self._meta_account_id,
+                        "time_range": {"since": day_str, "until": day_str},
+                        "level": "account",
+                        "fields": "spend,impressions,clicks,cpc,ctr,cpm,reach,frequency",
+                    },
+                )
+                data = self._extract_insights_data(result)
+                return {
+                    "date": day_str,
+                    "spend": round(self._safe_float(data.get("spend", 0)), 2),
+                    "impressions": self._safe_int(data.get("impressions", 0)),
+                    "clicks": self._safe_int(data.get("clicks", 0)),
+                    "cpc": round(self._safe_float(data.get("cpc", 0)), 2),
+                    "ctr": round(self._safe_float(data.get("ctr", 0)), 2),
+                    "cpm": round(self._safe_float(data.get("cpm", 0)), 2),
+                    "reach": self._safe_int(data.get("reach", 0)),
+                    "frequency": round(self._safe_float(data.get("frequency", 0)), 2),
+                }
+            except Exception as e:
+                logger.warning(f"Failed to fetch day {day_str}: {e}")
+                return {
+                    "date": day_str,
+                    "spend": 0, "impressions": 0, "clicks": 0,
+                    "cpc": 0, "ctr": 0, "cpm": 0, "reach": 0, "frequency": 0,
+                    "error": str(e),
+                }
+
+        logger.info(f"Fetching {days} days of ad spend data in parallel...")
+
+        # Fire all daily calls concurrently
+        daily_tasks = [fetch_day(i) for i in range(days)]
+
+        # Also fetch campaign-level totals for the full period (single call)
+        campaign_task = self._mcp_client.call_tool(
+            "get_insights",
+            {
+                "object_id": self._meta_account_id,
+                "time_range": {"since": since_str, "until": until_str},
+                "level": "campaign",
+                "fields": "campaign_id,campaign_name,spend,impressions,clicks,cpc,ctr,actions,purchase_roas",
+            },
+        )
+
+        # Run all in parallel
+        all_results = await asyncio.gather(*daily_tasks, campaign_task, return_exceptions=True)
+
+        # Separate daily results from campaign result
+        daily_breakdown = []
+        total_spend = 0.0
+        total_impressions = 0
+        total_clicks = 0
+
+        for i in range(days):
+            result = all_results[i]
+            if isinstance(result, Exception):
+                day = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+                logger.warning(f"Day {day} fetch failed: {result}")
+                daily_breakdown.append({
+                    "date": day, "spend": 0, "impressions": 0, "clicks": 0,
+                    "cpc": 0, "ctr": 0, "cpm": 0, "reach": 0, "frequency": 0,
+                })
+            else:
+                daily_breakdown.append(result)
+                total_spend += result["spend"]
+                total_impressions += result["impressions"]
+                total_clicks += result["clicks"]
+
+        # --- Step 2: Parse campaign totals ---
+        campaign_raw = all_results[days]
+        campaigns_summary = []
+        if not isinstance(campaign_raw, Exception):
+            campaign_list = self._extract_insights_list(campaign_raw)
+            for camp in campaign_list:
+                spend = self._safe_float(camp.get("spend", 0))
+                clicks = self._safe_int(camp.get("clicks", 0))
+                impressions = self._safe_int(camp.get("impressions", 0))
+                cpc = self._safe_float(camp.get("cpc", 0))
+                ctr = self._safe_float(camp.get("ctr", 0))
+
+                conversions = 0
+                actions = camp.get("actions", [])
+                if isinstance(actions, list):
+                    for action in actions:
+                        action_type = action.get("action_type", "")
+                        if "offsite_conversion" in action_type or action_type == "purchase":
+                            conversions += self._safe_int(action.get("value", 0))
+
+                roas = 0.0
+                purchase_roas = camp.get("purchase_roas", [])
+                if isinstance(purchase_roas, list) and purchase_roas:
+                    roas = self._safe_float(purchase_roas[0].get("value", 0))
+
+                campaigns_summary.append({
+                    "campaign_id": camp.get("campaign_id", "unknown"),
+                    "name": camp.get("campaign_name", "Unknown Campaign"),
+                    "platform": "meta",
+                    "spend": round(spend, 2),
+                    "clicks": clicks,
+                    "impressions": impressions,
+                    "conversions": conversions,
+                    "cpc": round(cpc, 2),
+                    "ctr": round(ctr, 2),
+                    "roas": round(roas, 2),
+                })
+
+        # Calculate averages
+        num_days = max(len(daily_breakdown), 1)
+        avg_daily_spend = round(total_spend / num_days, 2)
+
+        return {
+            "period": {
+                "start": since_str,
+                "end": until_str,
+                "days": days,
+            },
+            "total_spend": round(total_spend, 2),
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "avg_daily_spend": avg_daily_spend,
+            "avg_cpc": round(total_spend / max(total_clicks, 1), 2),
+            "avg_ctr": round((total_clicks / max(total_impressions, 1)) * 100, 2),
+            "daily_breakdown": daily_breakdown,
+            "campaigns": campaigns_summary,
+            "campaigns_daily": [],  # Daily per-campaign not available without time_increment
+            "platform_breakdown": {
+                "meta": round(total_spend, 2),
+                "google": 0,
+            },
+            "source": "meta_ads_mcp",
+        }
+
+    async def _mock_get_ad_spend_history(self, days: int = 7) -> Dict[str, Any]:
+        """
+        Mock implementation for multi-day ad spend history.
+        Generates realistic-looking daily data for testing.
+        """
+        end_date = datetime.utcnow()
+        daily_breakdown = []
+        total_spend = 0.0
+        total_impressions = 0
+        total_clicks = 0
+
+        for i in range(days - 1, -1, -1):
+            day = end_date - timedelta(days=i)
+            day_str = day.strftime("%Y-%m-%d")
+
+            # Generate realistic daily variance
+            base_spend = 780.0
+            day_of_week = day.weekday()
+            # Weekends have lower spend
+            if day_of_week >= 5:
+                base_spend *= 0.7
+            variance = random.uniform(0.8, 1.2)
+            day_spend = round(base_spend * variance, 2)
+            day_impressions = int(day_spend * random.uniform(80, 120))
+            day_clicks = int(day_impressions * random.uniform(0.015, 0.04))
+
+            total_spend += day_spend
+            total_impressions += day_impressions
+            total_clicks += day_clicks
+
+            daily_breakdown.append({
+                "date": day_str,
+                "spend": day_spend,
+                "impressions": day_impressions,
+                "clicks": day_clicks,
+                "cpc": round(day_spend / max(day_clicks, 1), 2),
+                "ctr": round((day_clicks / max(day_impressions, 1)) * 100, 2),
+                "cpm": round((day_spend / max(day_impressions, 1)) * 1000, 2),
+                "reach": int(day_impressions * 0.85),
+                "frequency": round(day_impressions / max(int(day_impressions * 0.85), 1), 2),
+            })
+
+        # Generate mock campaign summaries
+        campaigns_summary = []
+        campaigns_daily = []
+        for cid, camp in self._mock_campaigns.items():
+            camp_spend = round(total_spend * random.uniform(0.15, 0.25), 2)
+            camp_clicks = int(camp_spend / camp["cpc"])
+            camp_impressions = int(camp_clicks / (camp["ctr"] / 100))
+            campaigns_summary.append({
+                "campaign_id": cid,
+                "name": camp["name"],
+                "platform": camp["platform"],
+                "spend": camp_spend,
+                "clicks": camp_clicks,
+                "impressions": camp_impressions,
+                "conversions": int(camp_clicks * random.uniform(0.02, 0.08)),
+                "cpc": round(camp["cpc"] * random.uniform(0.9, 1.1), 2),
+                "ctr": round(camp["ctr"] * random.uniform(0.9, 1.1), 2),
+                "roas": round(camp["roas"] * random.uniform(0.8, 1.2), 2),
+            })
+
+            # Daily breakdown per campaign
+            camp_daily = []
+            for db in daily_breakdown:
+                camp_day_spend = round(db["spend"] * random.uniform(0.15, 0.25), 2)
+                camp_day_clicks = int(camp_day_spend / max(camp["cpc"], 0.01))
+                camp_day_impressions = int(camp_day_clicks / max(camp["ctr"] / 100, 0.001))
+                camp_daily.append({
+                    "date": db["date"],
+                    "spend": camp_day_spend,
+                    "impressions": camp_day_impressions,
+                    "clicks": camp_day_clicks,
+                    "cpc": round(camp_day_spend / max(camp_day_clicks, 1), 2),
+                    "ctr": round((camp_day_clicks / max(camp_day_impressions, 1)) * 100, 2),
+                })
+            campaigns_daily.append({
+                "campaign_id": cid,
+                "name": camp["name"],
+                "daily": camp_daily,
+            })
+
+        num_days = max(len(daily_breakdown), 1)
+
+        return {
+            "period": {
+                "start": daily_breakdown[0]["date"] if daily_breakdown else "",
+                "end": daily_breakdown[-1]["date"] if daily_breakdown else "",
+                "days": days,
+            },
+            "total_spend": round(total_spend, 2),
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "avg_daily_spend": round(total_spend / num_days, 2),
+            "avg_cpc": round(total_spend / max(total_clicks, 1), 2),
+            "avg_ctr": round((total_clicks / max(total_impressions, 1)) * 100, 2),
+            "daily_breakdown": daily_breakdown,
+            "campaigns": campaigns_summary,
+            "campaigns_daily": campaigns_daily,
+            "platform_breakdown": {
+                "meta": round(total_spend * 0.6, 2),
+                "google": round(total_spend * 0.4, 2),
+            },
+            "source": "mock",
         }
 
     # ================================================================
