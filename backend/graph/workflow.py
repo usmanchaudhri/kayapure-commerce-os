@@ -238,9 +238,9 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
         "message": "Calculating P&L metrics...",
     })
 
-    sales = state.get("sales_data", {})
-    ads = state.get("ad_spend_data", {})
-    inventory = state.get("inventory_data", {})
+    sales = state.get("sales_data") or {}
+    ads = state.get("ad_spend_data") or {}
+    inventory = state.get("inventory_data") or {}
 
     total_revenue = sales.get("total_revenue", 0)
     total_ad_spend = ads.get("total_spend", 0)
@@ -438,7 +438,7 @@ async def strategy_agent(state: CommerceState) -> dict:
     # ---- Rule-Based Strategy: Competitor Snipe ----
     for sku in sku_analysis:
         margin = sku.get("contribution_margin", 0)
-        inv_data = state.get("inventory_data", {})
+        inv_data = state.get("inventory_data") or {}
         inv_items = inv_data.get("inventory", []) if isinstance(inv_data, dict) else []
 
         # Simulate competitor price check (in production, from Amazon SP-API)
