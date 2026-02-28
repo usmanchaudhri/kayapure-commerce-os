@@ -196,9 +196,9 @@ export async function fetchInventory() {
   return fetchAPI<any>("/api/logistics/inventory");
 }
 
-// --- MCP Status ---
-export async function fetchMCPStatus() {
-  return fetchAPI<any>("/api/mcp/status");
+// --- Facebook Ads Status ---
+export async function fetchFacebookAdsStatus() {
+  return fetchAPI<any>("/api/facebook-ads/status");
 }
 
 // --- Feature Flags ---

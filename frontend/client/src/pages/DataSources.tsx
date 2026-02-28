@@ -39,7 +39,7 @@ import {
   fetchAdSpend,
   fetchDailySales,
   fetchInventory,
-  fetchMCPStatus,
+  fetchFacebookAdsStatus,
   fetchMetrics,
   fetchSKUs,
   fetchPnLSummary,
@@ -71,12 +71,12 @@ const INITIAL_FEEDS: DataFeed[] = [
   {
     id: "marketing",
     name: "Marketing — Meta Ads",
-    source: "Pipeboard MCP Server",
-    protocol: "MCP (JSON-RPC 2.0 / Streamable HTTP)",
+    source: "Facebook Graph API v21.0",
+    protocol: "REST (HTTPS)",
     icon: Megaphone,
     color: "text-amber-warn",
     glowClass: "glow-amber",
-    description: "Ad spend, campaign performance, CPC, CTR, and ROAS from Meta Ads via MCP.",
+    description: "Ad spend, campaign performance, CPC, CTR, and ROAS from Meta Ads via Facebook Graph API.",
     status: "idle",
     data: null,
     error: null,
@@ -85,14 +85,14 @@ const INITIAL_FEEDS: DataFeed[] = [
     requiredSource: "marketing",
   },
   {
-    id: "mcp-status",
-    name: "MCP Connection Status",
-    source: "MCP Client Manager",
-    protocol: "Internal",
+    id: "fb-ads-status",
+    name: "Facebook Ads API Status",
+    source: "Facebook Marketing API",
+    protocol: "REST (Graph API v21.0)",
     icon: Zap,
     color: "text-primary",
     glowClass: "glow-cyan-sm",
-    description: "Connection status, available tools, and configuration for all MCP servers.",
+    description: "Connection status, API version, and configuration for the Facebook Ads integration.",
     status: "idle",
     data: null,
     error: null,
@@ -219,8 +219,8 @@ export default function DataSources() {
         case "dwh-skus":
           data = await fetchSKUs();
           break;
-        case "mcp-status":
-          data = await fetchMCPStatus();
+        case "fb-ads-status":
+          data = await fetchFacebookAdsStatus();
           break;
         default:
           throw new Error("Unknown feed");
@@ -561,8 +561,8 @@ function FormattedView({ feedId, data }: { feedId: string; data: any }) {
       return <MetricsView data={data} />;
     case "dwh-skus":
       return <SKUView data={data} />;
-    case "mcp-status":
-      return <MCPStatusView data={data} />;
+    case "fb-ads-status":
+      return <FacebookAdsStatusView data={data} />;
     default:
       return <pre className="text-xs font-mono">{JSON.stringify(data, null, 2)}</pre>;
   }
@@ -581,7 +581,7 @@ function MarketingView({ data }: { data: any }) {
         <MiniKPI label="Total Spend" value={`$${summary.total_spend?.toFixed(2) || "0"}`} icon={DollarSign} color="text-amber-warn" />
         <MiniKPI label="Total Clicks" value={summary.total_clicks?.toLocaleString() || "0"} icon={BarChart3} color="text-primary" />
         <MiniKPI label="Avg CTR" value={`${summary.avg_ctr?.toFixed(2) || "0"}%`} icon={TrendingUp} color="text-emerald-ok" />
-        <MiniKPI label="Source" value={summary.source === "mcp" ? "LIVE MCP" : summary.source?.toUpperCase() || "—"} icon={Zap} color={summary.source === "mcp" ? "text-emerald-ok" : "text-muted-foreground"} />
+        <MiniKPI label="Source" value={summary.source === "facebook_api" ? "LIVE API" : summary.source?.toUpperCase() || "—"} icon={Zap} color={summary.source === "facebook_api" ? "text-emerald-ok" : "text-muted-foreground"} />
       </div>
 
       {/* Daily Breakdown Table */}
@@ -797,16 +797,16 @@ function SKUView({ data }: { data: any }) {
   );
 }
 
-// --- MCP Status ---
-function MCPStatusView({ data }: { data: any }) {
+// --- Facebook Ads Status ---
+function FacebookAdsStatusView({ data }: { data: any }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MiniKPI
-          label="MCP Enabled"
-          value={data?.mcp_enabled ? "YES" : "NO"}
+          label="Facebook Ads"
+          value={data?.facebook_ads_enabled ? "ENABLED" : "DISABLED"}
           icon={Zap}
-          color={data?.mcp_enabled ? "text-emerald-ok" : "text-crimson-alert"}
+          color={data?.facebook_ads_enabled ? "text-emerald-ok" : "text-crimson-alert"}
         />
         <MiniKPI
           label="Meta Ads"
@@ -815,8 +815,8 @@ function MCPStatusView({ data }: { data: any }) {
           color={data?.meta_ads?.connected ? "text-emerald-ok" : "text-crimson-alert"}
         />
         <MiniKPI
-          label="Tools Available"
-          value={data?.meta_ads?.tools_available?.toString() || "0"}
+          label="API Version"
+          value={data?.meta_ads?.api_version || "—"}
           icon={Code}
           color="text-primary"
         />
@@ -824,18 +824,18 @@ function MCPStatusView({ data }: { data: any }) {
           label="Service Mode"
           value={data?.marketing_service_mode?.toUpperCase() || "—"}
           icon={Radio}
-          color={data?.marketing_service_mode === "mcp" ? "text-emerald-ok" : "text-amber-warn"}
+          color={data?.marketing_service_mode === "facebook_api" ? "text-emerald-ok" : "text-amber-warn"}
         />
       </div>
       <div className="p-3 rounded-lg bg-accent/20 border border-border">
         <div className="text-[11px] font-mono text-muted-foreground space-y-1">
           <div>
-            <span className="text-foreground/60">Server URL:</span>{" "}
-            <span className="text-primary">{data?.meta_ads?.server_url || "—"}</span>
-          </div>
-          <div>
             <span className="text-foreground/60">Account ID:</span>{" "}
             <span className="text-foreground">{data?.meta_ads?.account_id || "—"}</span>
+          </div>
+          <div>
+            <span className="text-foreground/60">API Version:</span>{" "}
+            <span className="text-primary">{data?.meta_ads?.api_version || "—"}</span>
           </div>
           <div>
             <span className="text-foreground/60">Timestamp:</span>{" "}

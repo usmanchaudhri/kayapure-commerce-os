@@ -43,7 +43,7 @@ from services.firecracker_manager import firecracker_manager
 from services.commerce import commerce_service
 from services.marketing import marketing_service
 from services.logistics import logistics_service
-from services.mcp_client import mcp_manager
+from services.facebook_ads_client import FacebookAdsClient
 from graph.workflow import commerce_graph, firecracker_executor_node, CommerceState
 
 # ============================================
@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
     startup_logger.info("=" * 60)
     startup_logger.info("KayaPure Commerce OS starting up...")
     startup_logger.info(f"LangSmith tracing: {'ENABLED' if langsmith_enabled else 'DISABLED'}")
-    startup_logger.info(f"MCP enabled: {settings.MCP_ENABLED}")
+    startup_logger.info(f"Facebook Ads API enabled: {settings.FACEBOOK_ADS_ENABLED}")
     startup_logger.info(f"Firecracker mock: {settings.FIRECRACKER_MOCK}")
     startup_logger.info("=" * 60)
 
@@ -122,39 +122,42 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     startup_logger.info("Database tables verified")
 
-    # Initialize MCP connections
-    if settings.mcp_meta_ads_ready:
-        startup_logger.info("MCP enabled — connecting to Meta Ads MCP server...")
-        mcp_manager.register_server(
-            name="meta-ads",
-            server_url=settings.MCP_META_ADS_URL,
-            auth_token=settings.MCP_META_ADS_TOKEN,
+    # Initialize Facebook Ads API client
+    fb_client = None
+    if settings.facebook_ads_ready:
+        startup_logger.info("Facebook Ads API enabled — connecting to Graph API...")
+        fb_client = FacebookAdsClient(
+            access_token=settings.FACEBOOK_ACCESS_TOKEN,
+            account_id=settings.META_ADS_ACCOUNT_ID,
         )
-        init_results = await mcp_manager.initialize_all()
-        startup_logger.info(
-            f"MCP initialization results: {init_results}",
-            extra={"mcp_init_results": init_results},
-        )
-
-        # Configure marketing service with MCP client
-        if init_results.get("meta-ads"):
+        try:
+            account_info = await fb_client.initialize()
             marketing_service.configure(
-                mcp_client=mcp_manager.meta_ads,
+                fb_client=fb_client,
                 meta_account_id=settings.META_ADS_ACCOUNT_ID,
             )
-            startup_logger.info("MarketingService configured with live Meta Ads MCP")
-        else:
-            startup_logger.warning("Meta Ads MCP init failed — MarketingService using mock data")
+            startup_logger.info(
+                f"MarketingService configured with live Facebook Ads API — "
+                f"account: {account_info.get('name', 'unknown')}",
+                extra={"account_info": account_info},
+            )
+        except Exception as e:
+            startup_logger.warning(
+                f"Facebook Ads API init failed — MarketingService using mock data: {e}",
+                extra={"error": str(e)},
+            )
+            fb_client = None
     else:
-        startup_logger.info("MCP disabled or not configured — MarketingService using mock data")
+        startup_logger.info("Facebook Ads API disabled or not configured — MarketingService using mock data")
 
     startup_logger.info("KayaPure Commerce OS ready to serve requests")
 
     yield
 
-    # Shutdown: close MCP connections
-    startup_logger.info("Shutting down — closing MCP connections...")
-    await mcp_manager.close_all()
+    # Shutdown: close Facebook Ads client
+    startup_logger.info("Shutting down — closing connections...")
+    if fb_client:
+        await fb_client.close()
     startup_logger.info("Shutdown complete")
 
 
@@ -191,7 +194,7 @@ async def health_check():
         "service": "KayaPure Commerce OS",
         "version": "1.0.0",
         "langsmith_tracing": langsmith_enabled,
-        "mcp_enabled": settings.MCP_ENABLED,
+        "facebook_ads_enabled": settings.FACEBOOK_ADS_ENABLED,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -234,33 +237,20 @@ async def get_feature_flags():
 
 
 # ============================================
-# MCP Status & Diagnostics
+# Facebook Ads Status & Diagnostics
 # ============================================
-@app.get("/api/mcp/status")
-async def mcp_status():
-    """Check MCP connection status and marketing service mode."""
-    meta_ads_connected = False
-    meta_ads_tools = []
-
-    if settings.mcp_meta_ads_ready:
-        try:
-            client = mcp_manager.meta_ads
-            meta_ads_tools = await client.list_tools()
-            meta_ads_connected = True
-        except Exception as e:
-            meta_ads_connected = False
-            meta_ads_tools = [{"error": str(e)}]
-
+@app.get("/api/facebook-ads/status")
+async def facebook_ads_status():
+    """Check Facebook Ads API connection status and marketing service mode."""
     return {
-        "mcp_enabled": settings.MCP_ENABLED,
+        "facebook_ads_enabled": settings.FACEBOOK_ADS_ENABLED,
         "meta_ads": {
-            "configured": settings.mcp_meta_ads_ready,
-            "connected": meta_ads_connected,
-            "server_url": settings.MCP_META_ADS_URL,
+            "configured": settings.facebook_ads_ready,
+            "connected": marketing_service._use_facebook,
             "account_id": settings.META_ADS_ACCOUNT_ID[:8] + "..." if settings.META_ADS_ACCOUNT_ID else "not set",
-            "tools_available": len(meta_ads_tools) if isinstance(meta_ads_tools, list) and not (meta_ads_tools and "error" in meta_ads_tools[0]) else 0,
+            "api_version": "v21.0",
         },
-        "marketing_service_mode": "mcp" if marketing_service._use_mcp else "mock",
+        "marketing_service_mode": "facebook_api" if marketing_service._use_facebook else "mock",
         "langsmith_tracing": langsmith_enabled,
         "timestamp": datetime.utcnow().isoformat(),
     }
@@ -271,7 +261,7 @@ async def mcp_status():
 # ============================================
 @app.get("/api/logs")
 async def get_logs(
-    component: Optional[str] = Query(default=None, description="Filter by component: mcp, agent, api"),
+    component: Optional[str] = Query(default=None, description="Filter by component: facebook_ads, agent, api"),
     level: Optional[str] = Query(default=None, description="Filter by level: DEBUG, INFO, WARNING, ERROR"),
     limit: int = Query(default=100, le=1000),
     correlation_id: Optional[str] = Query(default=None, description="Filter by correlation ID"),
@@ -284,7 +274,7 @@ async def get_logs(
 
     # Map component to log file
     file_map = {
-        "mcp": "logs/mcp.log",
+        "facebook_ads": "logs/facebook_ads.log",
         "agent": "logs/agent.log",
         "api": "logs/api.log",
         None: "logs/kayapure.log",

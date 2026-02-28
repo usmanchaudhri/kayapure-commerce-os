@@ -4,20 +4,20 @@ KayaPure Commerce OS - Structured Logging Configuration
 Provides:
   1. JSON-formatted file logging (logs/kayapure.log) with rotation
   2. Human-readable colored console logging
-  3. Component-specific loggers (mcp, agent, api, workflow, marketing, etc.)
+  3. Component-specific loggers (facebook_ads, agent, api, workflow, marketing, etc.)
   4. Request correlation IDs for tracing requests across components
   5. Performance timing decorators
 
 Log files are written to: backend/logs/
   - kayapure.log       → All logs (JSON, rotated at 5MB, 5 backups)
-  - mcp.log            → MCP-specific logs (tool calls, responses, errors)
+  - facebook_ads.log   → Facebook Ads API logs (requests, responses, errors)
   - agent.log          → LangGraph workflow logs (node execution, state transitions)
   - api.log            → HTTP request/response logs
 
 Usage:
   from utils.logging_config import get_logger, log_timing, set_correlation_id
-  logger = get_logger("mcp")
-  logger.info("Connected to Meta Ads MCP", extra={"tools": 46})
+  logger = get_logger("facebook_ads")
+  logger.info("Connected to Facebook Ads API", extra={"account": "act_123"})
 """
 
 import json
@@ -120,7 +120,7 @@ class ColoredFormatter(logging.Formatter):
     BOLD = "\033[1m"
 
     COMPONENT_COLORS = {
-        "kayapure.mcp": "\033[96m",       # Bright Cyan
+        "kayapure.facebook_ads": "\033[96m",  # Bright Cyan
         "kayapure.agent": "\033[95m",     # Bright Magenta
         "kayapure.api": "\033[94m",       # Bright Blue
         "kayapure.workflow": "\033[93m",  # Bright Yellow
@@ -164,7 +164,7 @@ def setup_logging(
 
     Creates:
       - logs/kayapure.log  (all logs, JSON format, rotating)
-      - logs/mcp.log       (MCP-specific, JSON format, rotating)
+      - logs/facebook_ads.log (Facebook Ads API, JSON format, rotating)
       - logs/agent.log     (Agent/workflow, JSON format, rotating)
       - logs/api.log       (API requests, JSON format, rotating)
       - Console output     (colored, human-readable)
@@ -202,9 +202,8 @@ def setup_logging(
 
     # ---- Component-Specific Log Files ----
     component_files = {
-        "kayapure.mcp": "mcp.log",
-        "kayapure.mcp_client": "mcp.log",
-        "kayapure.marketing": "mcp.log",
+        "kayapure.facebook_ads": "facebook_ads.log",
+        "kayapure.marketing": "facebook_ads.log",
         "kayapure.agent": "agent.log",
         "kayapure.workflow": "agent.log",
         "kayapure.api": "api.log",
@@ -239,7 +238,7 @@ def get_logger(component: str) -> logging.Logger:
     Get a component-specific logger.
 
     Usage:
-      logger = get_logger("mcp")          → kayapure.mcp
+      logger = get_logger("facebook_ads") → kayapure.facebook_ads
       logger = get_logger("workflow")      → kayapure.workflow
       logger = get_logger("api")           → kayapure.api
     """
@@ -255,8 +254,8 @@ def log_timing(component: str, operation: str):
     Decorator that logs execution time of async functions.
 
     Usage:
-      @log_timing("mcp", "call_tool")
-      async def call_tool(self, tool_name, arguments):
+      @log_timing("facebook_ads", "get_insights")
+      async def get_insights(self, params):
           ...
     """
     def decorator(func):

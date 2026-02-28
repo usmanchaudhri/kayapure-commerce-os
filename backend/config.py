@@ -42,21 +42,17 @@ class Settings:
 
     # API Keys (legacy direct integrations)
     SHOPIFY_API_KEY: str = os.getenv("SHOPIFY_API_KEY", "mock_shopify_key")
-    META_ADS_API_KEY: str = os.getenv("META_ADS_API_KEY", "mock_meta_ads_key")
     AMAZON_SP_API_KEY: str = os.getenv("AMAZON_SP_API_KEY", "mock_amazon_sp_key")
     FLEXPORT_API_KEY: str = os.getenv("FLEXPORT_API_KEY", "mock_flexport_key")
 
-    # MCP (Model Context Protocol) Configuration
-    # Meta Ads MCP — Pipeboard hosted server
-    MCP_META_ADS_URL: str = os.getenv(
-        "MCP_META_ADS_URL",
-        "https://mcp.pipeboard.co/meta-ads-mcp",
-    )
-    MCP_META_ADS_TOKEN: str = os.getenv("MCP_META_ADS_TOKEN", "")
+    # Facebook Marketing API (Graph API v21.0)
+    # Authentication: Long-Lived User Access Token (60-day validity)
+    # Get yours at: https://developers.facebook.com/tools/explorer/
+    FACEBOOK_ACCESS_TOKEN: str = os.getenv("FACEBOOK_ACCESS_TOKEN", "")
     META_ADS_ACCOUNT_ID: str = os.getenv("META_ADS_ACCOUNT_ID", "")
 
-    # MCP mode toggle: when True and token is set, use live MCP; otherwise mock
-    MCP_ENABLED: bool = os.getenv("MCP_ENABLED", "false").lower() == "true"
+    # Facebook API toggle: when True and token is set, use live API; otherwise mock
+    FACEBOOK_ADS_ENABLED: bool = os.getenv("FACEBOOK_ADS_ENABLED", "false").lower() == "true"
 
     # LangSmith Tracing
     LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
@@ -87,11 +83,11 @@ class Settings:
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:3001"]
 
     @property
-    def mcp_meta_ads_ready(self) -> bool:
-        """Check if Meta Ads MCP is fully configured and enabled."""
+    def facebook_ads_ready(self) -> bool:
+        """Check if Facebook Ads API is fully configured and enabled."""
         return (
-            self.MCP_ENABLED
-            and bool(self.MCP_META_ADS_TOKEN)
+            self.FACEBOOK_ADS_ENABLED
+            and bool(self.FACEBOOK_ACCESS_TOKEN)
             and bool(self.META_ADS_ACCOUNT_ID)
         )
 
