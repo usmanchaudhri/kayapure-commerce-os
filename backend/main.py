@@ -386,9 +386,7 @@ def list_metrics(
     channel: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """List daily metrics, ordered by most recent."""
-    if not settings.is_source_enabled("dwh"):
-        return source_disabled_response("dwh")
+    """List daily metrics, ordered by most recent. Always available if metrics exist in the database."""
     query = db.query(DailyMetric).order_by(desc(DailyMetric.timestamp))
     if channel:
         query = query.filter(DailyMetric.channel == channel)
@@ -397,9 +395,7 @@ def list_metrics(
 
 @app.get("/api/metrics/pnl-summary")
 def get_pnl_summary(days: int = Query(default=7, le=90), db: Session = Depends(get_db)):
-    """Get P&L summary for the specified period."""
-    if not settings.is_source_enabled("dwh"):
-        return source_disabled_response("dwh")
+    """Get P&L summary for the specified period. Always available if metrics exist in the database."""
     metrics = (
         db.query(DailyMetric)
         .order_by(desc(DailyMetric.timestamp))
