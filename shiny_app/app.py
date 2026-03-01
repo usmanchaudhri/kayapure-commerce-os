@@ -2,10 +2,9 @@
 KayaPure Commerce OS — Shiny Dashboard (Meta Ads)
 Embedded in FastAPI via ASGI mount at /dashboard.
 
-Displays:
-  - Aggregated KPI cards (total spend, clicks, impressions, avg CPC, avg CTR)
-  - Campaign insights table with status badges
-  - Daily spend breakdown chart
+Tabs:
+  - Dashboard: KPIs, spend trends, campaign insights, all-account totals
+  - Creatives: All ad creatives across all accounts
 """
 
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
@@ -57,6 +56,12 @@ app_ui = ui.page_fluid(
         .refresh-btn { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
         .refresh-btn:hover { background: #1d4ed8; }
         .period-info { font-size: 12px; color: #64748b; }
+        /* Tab styling overrides for dark theme */
+        .nav-tabs { border-bottom: 1px solid #2d3348; }
+        .nav-tabs .nav-link { color: #64748b; border: none; padding: 12px 20px; font-weight: 600; font-size: 14px; }
+        .nav-tabs .nav-link:hover { color: #e2e8f0; border: none; background: #1a1d27; }
+        .nav-tabs .nav-link.active { color: #22d3ee; border: none; border-bottom: 2px solid #22d3ee; background: transparent; }
+        .tab-content { padding-top: 24px; }
     """),
 
     # Header
@@ -78,57 +83,69 @@ app_ui = ui.page_fluid(
         style="display: flex; align-items: center; justify-content: space-between;",
     ),
 
-    # ---- Total Spend (All Accounts, Jan 2025 – Today) ----
-    ui.div(
-        ui.div(
-            ui.div("Total Ad Spend — All Accounts (Jan 2025 – Today)", class_="card-header"),
-            ui.div(ui.output_ui("total_spend_section"), class_="card-body"),
-            class_="card",
-        ),
-        style="margin-bottom: 24px;",
-    ),
+    # ============================================
+    # Tabbed Layout
+    # ============================================
+    ui.navset_tab(
+        # ---- Tab 1: Dashboard ----
+        ui.nav_panel(
+            "Dashboard",
 
-    # ---- 7-Day View: Period info ----
-    ui.div(
-        ui.tags.h3("Last 7 Days — Primary Account", style="color: #94a3b8; font-size: 15px; font-weight: 600; margin-bottom: 8px;"),
-    ),
-    ui.output_ui("period_info"),
-
-    # KPI Cards Row
-    ui.div(
-        ui.output_ui("kpi_cards"),
-        style="margin-bottom: 24px;",
-    ),
-
-    # Two-column layout: Chart + Campaign Table
-    ui.layout_columns(
-        # Daily Spend Chart
-        ui.div(
+            # Total Spend (All Accounts, Jan 2025 – Today)
             ui.div(
-                ui.div("Daily Ad Spend Trend", class_="card-header"),
-                ui.div(output_widget("spend_chart"), class_="card-body"),
-                class_="card",
+                ui.div(
+                    ui.div("Total Ad Spend — All Accounts (Jan 2025 – Today)", class_="card-header"),
+                    ui.div(ui.output_ui("total_spend_section"), class_="card-body"),
+                    class_="card",
+                ),
+                style="margin-bottom: 24px;",
+            ),
+
+            # 7-Day View: Period info
+            ui.div(
+                ui.tags.h3("Last 7 Days — Primary Account", style="color: #94a3b8; font-size: 15px; font-weight: 600; margin-bottom: 8px;"),
+            ),
+            ui.output_ui("period_info"),
+
+            # KPI Cards Row
+            ui.div(
+                ui.output_ui("kpi_cards"),
+                style="margin-bottom: 24px;",
+            ),
+
+            # Two-column layout: Chart + Campaign Table
+            ui.layout_columns(
+                ui.div(
+                    ui.div(
+                        ui.div("Daily Ad Spend Trend", class_="card-header"),
+                        ui.div(output_widget("spend_chart"), class_="card-body"),
+                        class_="card",
+                    ),
+                ),
+                ui.div(
+                    ui.div(
+                        ui.div("Campaign Insights", class_="card-header"),
+                        ui.div(ui.output_ui("campaign_table"), class_="card-body"),
+                        class_="card",
+                    ),
+                ),
+                col_widths=[7, 5],
             ),
         ),
-        # Campaign Table
-        ui.div(
+
+        # ---- Tab 2: Creatives ----
+        ui.nav_panel(
+            "Creatives",
+
             ui.div(
-                ui.div("Campaign Insights", class_="card-header"),
-                ui.div(ui.output_ui("campaign_table"), class_="card-body"),
-                class_="card",
+                ui.div(
+                    ui.div("Ad Creatives — All Accounts", class_="card-header"),
+                    ui.div(ui.output_ui("creatives_section"), class_="card-body"),
+                    class_="card",
+                ),
+                style="margin-bottom: 24px;",
             ),
         ),
-        col_widths=[7, 5],
-    ),
-
-    # ---- Ad Creatives (All Accounts) ----
-    ui.div(
-        ui.div(
-            ui.div("Ad Creatives — All Accounts", class_="card-header"),
-            ui.div(ui.output_ui("creatives_section"), class_="card-body"),
-            class_="card",
-        ),
-        style="margin-top: 24px; margin-bottom: 24px;",
     ),
 )
 
