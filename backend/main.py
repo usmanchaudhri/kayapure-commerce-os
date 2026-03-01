@@ -934,6 +934,29 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # ============================================
+# Mount Shiny Dashboard at /dashboard
+# ============================================
+try:
+    import sys
+    import os
+    # Add project root to path so shiny_app can import backend services
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    from shiny_app.app import shiny_app as _shiny_app
+    from starlette.routing import Mount
+    app.mount("/dashboard", _shiny_app)
+    startup_logger.info("Shiny dashboard mounted at /dashboard")
+except ImportError as e:
+    startup_logger.warning(f"Shiny dashboard not available (missing dependency): {e}")
+except Exception as e:
+    startup_logger.warning(f"Shiny dashboard mount failed: {e}")
+
+
+# ============================================
 # Entry Point
 # ============================================
 if __name__ == "__main__":
