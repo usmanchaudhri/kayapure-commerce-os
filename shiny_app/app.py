@@ -8,7 +8,6 @@ Displays:
   - Daily spend breakdown chart
 """
 
-import asyncio
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 import plotly.graph_objects as go
 from shinywidgets import output_widget, render_widget
@@ -117,16 +116,12 @@ app_ui = ui.page_fluid(
 def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.calc
-    def ad_data():
+    async def ad_data():
         """Fetch ad spend history from marketing_service. Re-runs on refresh."""
         input.refresh()  # Reactive dependency on refresh button
 
         from services.marketing import marketing_service
-        loop = asyncio.new_event_loop()
-        try:
-            data = loop.run_until_complete(marketing_service.get_ad_spend_history(days=7))
-        finally:
-            loop.close()
+        data = await marketing_service.get_ad_spend_history(days=7)
         return data
 
     @render.ui
