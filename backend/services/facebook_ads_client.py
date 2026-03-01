@@ -463,6 +463,144 @@ class FacebookAdsClient:
             "accounts": account_results,
         }
 
+    async def get_creatives_for_account(
+        self,
+        account_id: str,
+        fields: str = "id,name,title,body,image_url,thumbnail_url,object_story_spec,status,effective_object_story_id",
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch all ad creatives for a specific ad account.
+
+        Args:
+            account_id: The ad account ID (e.g., act_123456).
+            fields: Comma-separated fields to retrieve.
+            limit: Max creatives per page.
+
+        Returns:
+            List of creative dicts.
+        """
+        path = f"{account_id}/adcreatives"
+        params = {"fields": fields, "limit": str(limit)}
+        result = await self._request("GET", path, params=params)
+        creatives = result.get("data", [])
+
+        # Handle pagination
+        while result.get("paging", {}).get("next"):
+            next_url = result["paging"]["next"]
+            client = await self._get_client()
+            response = await client.get(next_url)
+            if response.status_code == 200:
+                result = response.json()
+                creatives.extend(result.get("data", []))
+            else:
+                break
+
+        logger.info(
+            f"Fetched {len(creatives)} creatives for {account_id}",
+            extra={"account_id": account_id, "creative_count": len(creatives)},
+        )
+        return creatives
+
+    async def get_all_creatives(self) -> Dict[str, Any]:
+        """
+        Fetch all ad creatives across ALL ad accounts accessible by the token.
+
+        Returns:
+            Dict with total_creatives count and per-account creative lists.
+        """
+        # Step 1: Discover all ad accounts
+        accounts = await self.get_all_ad_accounts()
+
+        # Step 2: Fetch creatives for each account in parallel
+        async def fetch_account_creatives(account: Dict) -> Dict[str, Any]:
+            account_id = account["id"]
+            account_name = account.get("name", "Unknown")
+            account_currency = account.get("currency", "USD")
+
+            try:
+                creatives = await self.get_creatives_for_account(account_id)
+
+                # Normalize each creative into a clean structure
+                normalized = []
+                for c in creatives:
+                    # Determine creative type from object_story_spec
+                    story_spec = c.get("object_story_spec", {}) or {}
+                    creative_type = "unknown"
+                    preview_url = c.get("image_url") or c.get("thumbnail_url") or ""
+
+                    if story_spec.get("video_data"):
+                        creative_type = "video"
+                        video_data = story_spec["video_data"]
+                        preview_url = preview_url or video_data.get("image_url", "")
+                    elif story_spec.get("link_data"):
+                        creative_type = "image"
+                        link_data = story_spec["link_data"]
+                        preview_url = preview_url or link_data.get("image_hash", "")
+                        # If link_data has child_attachments, it's a carousel
+                        if link_data.get("child_attachments"):
+                            creative_type = "carousel"
+                    elif story_spec.get("photo_data"):
+                        creative_type = "image"
+
+                    normalized.append({
+                        "creative_id": c.get("id", ""),
+                        "name": c.get("name", "Untitled"),
+                        "title": c.get("title", ""),
+                        "body": c.get("body", ""),
+                        "type": creative_type,
+                        "status": c.get("status", "UNKNOWN"),
+                        "image_url": c.get("image_url", ""),
+                        "thumbnail_url": c.get("thumbnail_url", ""),
+                        "preview_url": preview_url,
+                    })
+
+                return {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "currency": account_currency,
+                    "creative_count": len(normalized),
+                    "creatives": normalized,
+                }
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch creatives for {account_name} ({account_id}): {e}",
+                    extra={"account_id": account_id, "error": str(e)},
+                )
+                return {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "currency": account_currency,
+                    "creative_count": 0,
+                    "creatives": [],
+                    "error": str(e),
+                }
+
+        import asyncio
+        account_results = await asyncio.gather(
+            *[fetch_account_creatives(acc) for acc in accounts]
+        )
+
+        total_creatives = sum(a["creative_count"] for a in account_results)
+        accounts_with_creatives = sum(1 for a in account_results if a["creative_count"] > 0)
+
+        logger.info(
+            f"Fetched {total_creatives} creatives across {len(accounts)} accounts "
+            f"({accounts_with_creatives} with creatives)",
+            extra={
+                "total_creatives": total_creatives,
+                "account_count": len(accounts),
+                "accounts_with_creatives": accounts_with_creatives,
+            },
+        )
+
+        return {
+            "total_accounts": len(accounts),
+            "accounts_with_creatives": accounts_with_creatives,
+            "total_creatives": total_creatives,
+            "accounts": account_results,
+        }
+
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._http_client and not self._http_client.is_closed:

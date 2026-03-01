@@ -278,6 +278,39 @@ async def total_spend_all_accounts(
         return {"error": str(e)}
 
 
+@app.get("/api/facebook-ads/creatives")
+async def all_creatives(
+    account_id: Optional[str] = Query(default=None, description="Filter by specific account ID (e.g., act_123). If omitted, fetches all accounts."),
+):
+    """
+    Fetch all ad creatives across all ad accounts (or a specific account).
+    Returns creative name, type, status, thumbnail, body text, etc.
+    """
+    if not marketing_service._use_facebook or not marketing_service._fb_client:
+        return {"error": "Facebook Ads client not configured", "enabled": False}
+
+    try:
+        if account_id:
+            # Single account
+            creatives = await marketing_service._fb_client.get_creatives_for_account(account_id)
+            return {
+                "total_accounts": 1,
+                "total_creatives": len(creatives),
+                "accounts": [{
+                    "account_id": account_id,
+                    "creative_count": len(creatives),
+                    "creatives": creatives,
+                }],
+            }
+        else:
+            # All accounts
+            result = await marketing_service._fb_client.get_all_creatives()
+            return result
+    except Exception as e:
+        logger.error(f"Failed to fetch creatives: {e}")
+        return {"error": str(e)}
+
+
 # ============================================
 # Logs Endpoint — view structured logs from the dashboard
 # ============================================

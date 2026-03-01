@@ -120,6 +120,16 @@ app_ui = ui.page_fluid(
         ),
         col_widths=[7, 5],
     ),
+
+    # ---- Ad Creatives (All Accounts) ----
+    ui.div(
+        ui.div(
+            ui.div("Ad Creatives — All Accounts", class_="card-header"),
+            ui.div(ui.output_ui("creatives_section"), class_="card-body"),
+            class_="card",
+        ),
+        style="margin-top: 24px; margin-bottom: 24px;",
+    ),
 )
 
 
@@ -327,6 +337,138 @@ def server(input: Inputs, output: Outputs, session: Session):
             bargap=0.3,
         )
         return fig
+
+    @reactive.calc
+    async def creatives_data():
+        """Fetch all creatives across all accounts."""
+        input.refresh()  # Reactive dependency on refresh button
+
+        from services.marketing import marketing_service
+        if not marketing_service._fb_client:
+            return None
+        data = await marketing_service._fb_client.get_all_creatives()
+        return data
+
+    @render.ui
+    async def creatives_section():
+        data = await creatives_data()
+        if data is None or "error" in data:
+            return ui.div(
+                "Facebook Ads client not configured or error occurred.",
+                style="color: #64748b; text-align: center; padding: 24px;",
+            )
+
+        total_creatives = data.get("total_creatives", 0)
+        accounts = data.get("accounts", [])
+
+        # Summary KPI row
+        kpi_row = ui.div(
+            ui.div(
+                ui.div("Total Creatives", class_="kpi-label"),
+                ui.div(fmt_number(total_creatives), class_="kpi-value"),
+                ui.div(f"Across {data.get('total_accounts', 0)} accounts", class_="kpi-sub"),
+                class_="kpi-card",
+                style="flex: 1; min-width: 200px;",
+            ),
+            ui.div(
+                ui.div("Accounts with Creatives", class_="kpi-label"),
+                ui.div(fmt_number(data.get("accounts_with_creatives", 0)), class_="kpi-value"),
+                ui.div(f"of {data.get('total_accounts', 0)} total", class_="kpi-sub"),
+                class_="kpi-card",
+                style="flex: 1; min-width: 200px;",
+            ),
+            style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;",
+        )
+
+        if total_creatives == 0:
+            return ui.div(kpi_row, ui.div("No creatives found", style="color: #64748b;"))
+
+        # Build per-account creative tables
+        account_sections = []
+        for acc in accounts:
+            creatives = acc.get("creatives", [])
+            if not creatives:
+                continue
+
+            # Type badge helper
+            def type_badge(ctype):
+                colors = {
+                    "video": ("#1e3a5f", "#7dd3fc"),
+                    "image": ("#1a3a2a", "#6ee7b7"),
+                    "carousel": ("#3b1f5e", "#c4b5fd"),
+                }
+                bg, fg = colors.get(ctype, ("#374151", "#9ca3af"))
+                return ui.span(
+                    ctype.title(),
+                    style=f"background: {bg}; color: {fg}; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600;",
+                )
+
+            rows = []
+            for c in creatives:
+                status = c.get("status", "UNKNOWN").upper()
+                if status == "ACTIVE":
+                    status_badge = ui.span("Active", class_="badge-active")
+                elif status == "PAUSED":
+                    status_badge = ui.span("Paused", class_="badge-paused")
+                else:
+                    status_badge = ui.span(status.title(), class_="badge-paused")
+
+                # Thumbnail cell
+                thumb_url = c.get("preview_url") or c.get("thumbnail_url") or ""
+                if thumb_url:
+                    thumb = ui.tags.img(
+                        src=thumb_url,
+                        style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3348;",
+                    )
+                else:
+                    thumb = ui.span("—", style="color: #64748b;")
+
+                # Truncate body text
+                body_text = c.get("body", "") or ""
+                if len(body_text) > 80:
+                    body_text = body_text[:80] + "…"
+
+                rows.append(
+                    ui.tags.tr(
+                        ui.tags.td(thumb),
+                        ui.tags.td(c.get("name", "—")),
+                        ui.tags.td(type_badge(c.get("type", "unknown"))),
+                        ui.tags.td(status_badge),
+                        ui.tags.td(c.get("title", "—") or "—"),
+                        ui.tags.td(body_text or "—", style="max-width: 250px; font-size: 12px; color: #94a3b8;"),
+                    )
+                )
+
+            creative_table = ui.tags.table(
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("Preview"),
+                        ui.tags.th("Creative Name"),
+                        ui.tags.th("Type"),
+                        ui.tags.th("Status"),
+                        ui.tags.th("Title"),
+                        ui.tags.th("Body"),
+                    )
+                ),
+                ui.tags.tbody(*rows),
+            )
+
+            account_sections.append(
+                ui.div(
+                    ui.tags.h4(
+                        f"{acc.get('account_name', 'Unknown')} ",
+                        ui.span(
+                            f"({acc.get('account_id', '')}) — {len(creatives)} creatives",
+                            style="font-size: 12px; color: #64748b; font-weight: 400;",
+                        ),
+                        style="color: #e2e8f0; font-size: 14px; font-weight: 600; margin-bottom: 8px;",
+                    ),
+                    creative_table,
+                    style="margin-bottom: 24px;",
+                )
+            )
+
+        return ui.div(kpi_row, *account_sections)
 
     @render.ui
     async def campaign_table():
