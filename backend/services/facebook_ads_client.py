@@ -293,6 +293,176 @@ class FacebookAdsClient:
         params = {"access_token": self._access_token}
         return await self._request("POST", path, data=data)
 
+    async def get_all_ad_accounts(
+        self,
+        fields: str = "id,name,currency,account_status,amount_spent,timezone_name",
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch all ad accounts accessible by the current access token.
+
+        Returns:
+            List of ad account dicts with id, name, currency, status, etc.
+        """
+        path = "me/adaccounts"
+        params = {"fields": fields, "limit": "100"}
+        result = await self._request("GET", path, params=params)
+        accounts = result.get("data", [])
+
+        # Handle pagination if there are more than 100 accounts
+        while result.get("paging", {}).get("next"):
+            next_url = result["paging"]["next"]
+            client = await self._get_client()
+            response = await client.get(next_url)
+            if response.status_code == 200:
+                result = response.json()
+                accounts.extend(result.get("data", []))
+            else:
+                break
+
+        logger.info(
+            f"Found {len(accounts)} ad accounts",
+            extra={"account_count": len(accounts)},
+        )
+        return accounts
+
+    async def get_total_spend_all_accounts(
+        self,
+        since: str = "2025-01-01",
+        until: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Fetch total ad spend across ALL ad accounts from `since` to `until`.
+
+        Args:
+            since: Start date (YYYY-MM-DD). Defaults to Jan 1, 2025.
+            until: End date (YYYY-MM-DD). Defaults to today.
+
+        Returns:
+            Dict with grand_total_spend, per-account breakdown, and metadata.
+        """
+        from datetime import date as date_type
+
+        if until is None:
+            until = date_type.today().strftime("%Y-%m-%d")
+
+        time_range = {"since": since, "until": until}
+
+        # Step 1: Discover all ad accounts
+        accounts = await self.get_all_ad_accounts()
+
+        # Step 2: Fetch insights for each account in parallel
+        async def fetch_account_spend(account: Dict) -> Dict[str, Any]:
+            account_id = account["id"]
+            account_name = account.get("name", "Unknown")
+            account_currency = account.get("currency", "USD")
+            account_status = account.get("account_status", 0)
+
+            # Status codes: 1=ACTIVE, 2=DISABLED, 3=UNSETTLED, 7=PENDING_RISK_REVIEW, etc.
+            status_map = {
+                1: "ACTIVE", 2: "DISABLED", 3: "UNSETTLED",
+                7: "PENDING_RISK_REVIEW", 8: "PENDING_SETTLEMENT",
+                9: "IN_GRACE_PERIOD", 100: "PENDING_CLOSURE",
+                101: "CLOSED", 201: "ANY_ACTIVE", 202: "ANY_CLOSED",
+            }
+            status_label = status_map.get(account_status, f"UNKNOWN({account_status})")
+
+            try:
+                insights = await self.get_insights(
+                    object_id=account_id,
+                    time_range=time_range,
+                    level="account",
+                    fields="spend,impressions,clicks,cpc,ctr,cpm",
+                )
+                rows = insights.get("data", [])
+                if rows:
+                    row = rows[0]
+                    return {
+                        "account_id": account_id,
+                        "account_name": account_name,
+                        "currency": account_currency,
+                        "status": status_label,
+                        "spend": float(row.get("spend", 0)),
+                        "impressions": int(row.get("impressions", 0)),
+                        "clicks": int(row.get("clicks", 0)),
+                        "cpc": float(row.get("cpc", 0)),
+                        "ctr": float(row.get("ctr", 0)),
+                        "cpm": float(row.get("cpm", 0)),
+                        "has_data": True,
+                    }
+                else:
+                    return {
+                        "account_id": account_id,
+                        "account_name": account_name,
+                        "currency": account_currency,
+                        "status": status_label,
+                        "spend": 0.0,
+                        "impressions": 0,
+                        "clicks": 0,
+                        "cpc": 0.0,
+                        "ctr": 0.0,
+                        "cpm": 0.0,
+                        "has_data": False,
+                    }
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch insights for {account_name} ({account_id}): {e}",
+                    extra={"account_id": account_id, "error": str(e)},
+                )
+                return {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "currency": account_currency,
+                    "status": status_label,
+                    "spend": 0.0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "cpc": 0.0,
+                    "ctr": 0.0,
+                    "cpm": 0.0,
+                    "has_data": False,
+                    "error": str(e),
+                }
+
+        import asyncio
+        account_results = await asyncio.gather(
+            *[fetch_account_spend(acc) for acc in accounts]
+        )
+
+        # Step 3: Aggregate totals (grouped by currency)
+        grand_total_spend = sum(a["spend"] for a in account_results)
+        grand_total_impressions = sum(a["impressions"] for a in account_results)
+        grand_total_clicks = sum(a["clicks"] for a in account_results)
+        accounts_with_data = [a for a in account_results if a["has_data"]]
+
+        # Group by currency for proper reporting
+        currency_totals: Dict[str, float] = {}
+        for a in account_results:
+            cur = a["currency"]
+            currency_totals[cur] = currency_totals.get(cur, 0) + a["spend"]
+
+        logger.info(
+            f"Total spend across {len(accounts)} accounts: {grand_total_spend:,.2f} "
+            f"({len(accounts_with_data)} with data) from {since} to {until}",
+            extra={
+                "total_spend": grand_total_spend,
+                "account_count": len(accounts),
+                "accounts_with_data": len(accounts_with_data),
+                "since": since,
+                "until": until,
+            },
+        )
+
+        return {
+            "period": {"since": since, "until": until},
+            "total_accounts": len(accounts),
+            "accounts_with_data": len(accounts_with_data),
+            "grand_total_spend": grand_total_spend,
+            "grand_total_impressions": grand_total_impressions,
+            "grand_total_clicks": grand_total_clicks,
+            "currency_totals": currency_totals,
+            "accounts": account_results,
+        }
+
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._http_client and not self._http_client.is_closed:

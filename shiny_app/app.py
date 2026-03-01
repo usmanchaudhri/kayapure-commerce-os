@@ -78,7 +78,20 @@ app_ui = ui.page_fluid(
         style="display: flex; align-items: center; justify-content: space-between;",
     ),
 
-    # Period info
+    # ---- Total Spend (All Accounts, Jan 2025 – Today) ----
+    ui.div(
+        ui.div(
+            ui.div("Total Ad Spend — All Accounts (Jan 2025 – Today)", class_="card-header"),
+            ui.div(ui.output_ui("total_spend_section"), class_="card-body"),
+            class_="card",
+        ),
+        style="margin-bottom: 24px;",
+    ),
+
+    # ---- 7-Day View: Period info ----
+    ui.div(
+        ui.tags.h3("Last 7 Days — Primary Account", style="color: #94a3b8; font-size: 15px; font-weight: 600; margin-bottom: 8px;"),
+    ),
     ui.output_ui("period_info"),
 
     # KPI Cards Row
@@ -123,6 +136,110 @@ def server(input: Inputs, output: Outputs, session: Session):
         from services.marketing import marketing_service
         data = await marketing_service.get_ad_spend_history(days=7)
         return data
+
+    @reactive.calc
+    async def total_spend_data():
+        """Fetch total spend across all accounts from Jan 2025 to today."""
+        input.refresh()  # Reactive dependency on refresh button
+
+        from services.marketing import marketing_service
+        if not marketing_service._fb_client:
+            return None
+        data = await marketing_service._fb_client.get_total_spend_all_accounts(
+            since="2025-01-01"
+        )
+        return data
+
+    @render.ui
+    def total_spend_section():
+        data = total_spend_data()
+        if data is None or "error" in data:
+            return ui.div(
+                "Facebook Ads client not configured or error occurred.",
+                style="color: #64748b; text-align: center; padding: 24px;",
+            )
+
+        period = data.get("period", {})
+        accounts = data.get("accounts", [])
+        currency_totals = data.get("currency_totals", {})
+
+        # Grand total KPI row
+        kpi_items = []
+        for cur, total in currency_totals.items():
+            kpi_items.append(
+                ui.div(
+                    ui.div(f"Total Spend ({cur})", class_="kpi-label"),
+                    ui.div(fmt_currency(total, cur), class_="kpi-value"),
+                    ui.div(f"{period.get('since', '?')} → {period.get('until', '?')}", class_="kpi-sub"),
+                    class_="kpi-card",
+                    style="flex: 1; min-width: 200px;",
+                )
+            )
+
+        kpi_items.append(
+            ui.div(
+                ui.div("Total Impressions", class_="kpi-label"),
+                ui.div(fmt_number(data.get("grand_total_impressions", 0)), class_="kpi-value"),
+                ui.div(f"{data.get('total_accounts', 0)} accounts", class_="kpi-sub"),
+                class_="kpi-card",
+                style="flex: 1; min-width: 200px;",
+            )
+        )
+        kpi_items.append(
+            ui.div(
+                ui.div("Total Clicks", class_="kpi-label"),
+                ui.div(fmt_number(data.get("grand_total_clicks", 0)), class_="kpi-value"),
+                ui.div(f"{data.get('accounts_with_data', 0)} accounts with data", class_="kpi-sub"),
+                class_="kpi-card",
+                style="flex: 1; min-width: 200px;",
+            )
+        )
+
+        kpi_row = ui.div(*kpi_items, style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;")
+
+        # Per-account breakdown table
+        if not accounts:
+            return ui.div(kpi_row, ui.div("No accounts found", style="color: #64748b;"))
+
+        rows = []
+        for acc in accounts:
+            status = acc.get("status", "UNKNOWN")
+            if status == "ACTIVE":
+                badge = ui.span("Active", class_="badge-active")
+            elif status == "DISABLED":
+                badge = ui.span("Disabled", class_="badge-archived")
+            else:
+                badge = ui.span(status.title(), class_="badge-paused")
+
+            acc_currency = acc.get("currency", "USD")
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(acc.get("account_name", "—")),
+                    ui.tags.td(acc.get("account_id", "—"), style="font-size: 11px; color: #64748b;"),
+                    ui.tags.td(badge),
+                    ui.tags.td(acc_currency),
+                    ui.tags.td(fmt_currency(acc.get("spend", 0), acc_currency)),
+                    ui.tags.td(fmt_number(acc.get("impressions", 0))),
+                    ui.tags.td(fmt_number(acc.get("clicks", 0))),
+                )
+            )
+
+        account_table = ui.tags.table(
+            ui.tags.thead(
+                ui.tags.tr(
+                    ui.tags.th("Account Name"),
+                    ui.tags.th("Account ID"),
+                    ui.tags.th("Status"),
+                    ui.tags.th("Currency"),
+                    ui.tags.th("Total Spend"),
+                    ui.tags.th("Impressions"),
+                    ui.tags.th("Clicks"),
+                )
+            ),
+            ui.tags.tbody(*rows),
+        )
+
+        return ui.div(kpi_row, account_table)
 
     @render.ui
     def period_info():

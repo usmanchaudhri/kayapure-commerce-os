@@ -256,6 +256,28 @@ async def facebook_ads_status():
     }
 
 
+@app.get("/api/facebook-ads/total-spend")
+async def total_spend_all_accounts(
+    since: str = Query(default="2025-01-01", description="Start date (YYYY-MM-DD)"),
+    until: Optional[str] = Query(default=None, description="End date (YYYY-MM-DD), defaults to today"),
+):
+    """
+    Fetch total ad spend across ALL ad accounts from `since` to `until`.
+    Discovers all accounts accessible by the access token and aggregates spend.
+    """
+    if not marketing_service._use_facebook or not marketing_service._fb_client:
+        return {"error": "Facebook Ads client not configured", "enabled": False}
+
+    try:
+        result = await marketing_service._fb_client.get_total_spend_all_accounts(
+            since=since, until=until
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Failed to fetch total spend: {e}")
+        return {"error": str(e)}
+
+
 # ============================================
 # Logs Endpoint — view structured logs from the dashboard
 # ============================================
