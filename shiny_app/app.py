@@ -151,8 +151,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         return data
 
     @render.ui
-    def total_spend_section():
-        data = total_spend_data()
+    async def total_spend_section():
+        data = await total_spend_data()
         if data is None or "error" in data:
             return ui.div(
                 "Facebook Ads client not configured or error occurred.",
@@ -242,8 +242,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         return ui.div(kpi_row, account_table)
 
     @render.ui
-    def period_info():
-        data = ad_data()
+    async def period_info():
+        data = await ad_data()
         period = data.get("period", {})
         source = data.get("source", "unknown")
         currency = data.get("currency", "USD")
@@ -260,8 +260,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @render.ui
-    def kpi_cards():
-        data = ad_data()
+    async def kpi_cards():
+        data = await ad_data()
         currency = data.get("currency", "USD")
 
         cards = [
@@ -290,8 +290,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @render_widget
-    def spend_chart():
-        data = ad_data()
+    async def spend_chart():
+        data = await ad_data()
         daily = data.get("daily_breakdown", [])
         currency = data.get("currency", "USD")
         sym = CURRENCY_SYMBOLS.get(currency, currency)
@@ -329,8 +329,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         return fig
 
     @render.ui
-    def campaign_table():
-        data = ad_data()
+    async def campaign_table():
+        data = await ad_data()
         campaigns = data.get("campaigns", [])
         currency = data.get("currency", "USD")
 
