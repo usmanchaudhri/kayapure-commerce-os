@@ -128,28 +128,35 @@ async def sensor_node(state: CommerceState) -> dict:
             logs.append({"timestamp": datetime.utcnow().isoformat(), "node": "sensor_node", "message": "Shopify: SKIPPED (source disabled)"})
 
         # Poll Meta/Google Ads (only if marketing source is enabled)
+        # Uses 7-day history for richer context (single-day may return 0 if today's data isn't finalized)
         if settings.is_source_enabled("marketing"):
             t0 = time.perf_counter()
-            ad_spend_data = await marketing_service.get_ad_spend_summary()
+            ad_spend_data = await marketing_service.get_ad_spend_history(days=7)
             ads_ms = (time.perf_counter() - t0) * 1000
             sources_polled += 1
+            period = ad_spend_data.get('period', {})
             wf_logger.info(
                 f"  Meta Ads polled in {ads_ms:.1f}ms: "
-                f"${ad_spend_data['total_spend']:.2f} spend, "
-                f"{len(ad_spend_data['campaigns'])} campaigns (source: {ad_spend_data.get('source', 'unknown')})",
+                f"${ad_spend_data.get('total_spend', 0):.2f} spend over {period.get('days', 7)} days, "
+                f"{len(ad_spend_data.get('campaigns', []))} campaigns, "
+                f"{len(ad_spend_data.get('daily_breakdown', []))} daily rows "
+                f"(source: {ad_spend_data.get('source', 'unknown')})",
                 extra={
                     "node": "sensor_node",
                     "source": "meta_ads",
                     "duration_ms": round(ads_ms, 1),
-                    "total_spend": ad_spend_data["total_spend"],
-                    "campaign_count": len(ad_spend_data["campaigns"]),
+                    "total_spend": ad_spend_data.get("total_spend", 0),
+                    "campaign_count": len(ad_spend_data.get("campaigns", [])),
+                    "daily_count": len(ad_spend_data.get("daily_breakdown", [])),
+                    "period_start": period.get("start"),
+                    "period_end": period.get("end"),
                     "data_source": ad_spend_data.get("source", "unknown"),
                 },
             )
             logs.append({
                 "timestamp": datetime.utcnow().isoformat(),
                 "node": "sensor_node",
-                "message": f"Ad Spend: ${ad_spend_data['total_spend']:.2f} across {len(ad_spend_data['campaigns'])} campaigns",
+                "message": f"Ad Spend: ${ad_spend_data.get('total_spend', 0):.2f} over {period.get('days', 7)} days, {len(ad_spend_data.get('campaigns', []))} campaigns",
             })
         else:
             wf_logger.info("  Meta Ads SKIPPED (marketing source disabled)", extra={"node": "sensor_node", "source": "meta_ads", "status": "disabled"})
@@ -245,6 +252,13 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
     total_revenue = sales.get("total_revenue", 0)
     total_ad_spend = ads.get("total_spend", 0)
 
+    # Extract period and daily context from ad spend history
+    ads_period = ads.get("period", {})
+    ads_period_days = ads_period.get("days", 1) if ads_period else 1
+    avg_daily_ad_spend = ads.get("avg_daily_spend", round(total_ad_spend / max(ads_period_days, 1), 2))
+    daily_breakdown = ads.get("daily_breakdown", [])
+    currency = ads.get("currency", "USD")
+
     # Estimate COGS and shipping from inventory data
     total_cogs = total_revenue * 0.30  # ~30% COGS ratio
     total_shipping = sales.get("total_orders", 0) * 5.50  # avg shipping per order
@@ -257,11 +271,16 @@ async def p_and_l_analyzer(state: CommerceState) -> dict:
         "total_revenue": round(total_revenue, 2),
         "total_cogs": round(total_cogs, 2),
         "total_ad_spend": round(total_ad_spend, 2),
+        "avg_daily_ad_spend": round(avg_daily_ad_spend, 2),
         "total_shipping": round(total_shipping, 2),
         "gross_profit": round(gross_profit, 2),
         "net_profit": round(net_profit, 2),
         "contribution_margin": round(contribution_margin, 2),
-        "period": "daily",
+        "currency": currency,
+        "period": f"{ads_period_days}-day" if ads_period_days > 1 else "daily",
+        "period_start": ads_period.get("start"),
+        "period_end": ads_period.get("end"),
+        "daily_ad_spend_breakdown": daily_breakdown,
         "calculated_at": datetime.utcnow().isoformat(),
     }
 
