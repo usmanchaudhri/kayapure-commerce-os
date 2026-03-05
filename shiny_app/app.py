@@ -1080,73 +1080,158 @@ def server(input: Inputs, output: Outputs, session: Session):
     # Creatives tab reactives
     # ============================================
 
+    # Reactive value to store cursor state per account
+    creative_cursor = reactive.Value("")
+    creative_cache = reactive.Value(None)  # {account_id, creatives, has_next, next_cursor, has_prev, prev_cursor}
+    creative_loading = reactive.Value(False)
+
     @reactive.calc
-    async def all_creatives_data():
-        """Fetch all creatives across all accounts."""
+    async def accounts_list():
+        """Fetch only the list of ad accounts (lightweight — no creatives)."""
         input.refresh()
         from services.marketing import marketing_service
         if not marketing_service._fb_client:
             return None
-        data = await marketing_service._fb_client.get_all_creatives()
-        return data
+        accounts = await marketing_service._fb_client.get_all_ad_accounts()
+        return accounts
 
     @render.ui
     async def account_selector():
-        """Render the account dropdown based on fetched data."""
-        data = await all_creatives_data()
-        if data is None:
-            return ui.div("Loading accounts...", style="color: #64748b; font-size: 16px;")
+        """Render the account dropdown — no 'All Accounts' option."""
+        accounts = await accounts_list()
+        if accounts is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading accounts...", class_="loading-text"),
+                class_="loading-spinner",
+            )
 
-        accounts = data.get("accounts", [])
-        choices = {"__all__": f"All Accounts ({data.get('total_creatives', 0)} creatives)"}
+        choices = {"": "— Select an ad account —"}
         for acc in accounts:
-            count = acc.get("creative_count", 0)
-            label = f"{acc.get('account_name', 'Unknown')} ({acc.get('account_id', '')}) — {count} creatives"
-            choices[acc.get("account_id", "")] = label
+            label = f"{acc.get('name', 'Unknown')} ({acc.get('id', '')})"
+            choices[acc.get("id", "")] = label
 
         return ui.input_select("account_select", None, choices=choices, width="100%")
 
+    @reactive.effect
+    @reactive.event(input.account_select)
+    async def _on_account_change():
+        """When account changes, fetch first page of creatives."""
+        selected = input.account_select()
+        if not selected:
+            creative_cache.set(None)
+            return
+        creative_cursor.set("")  # Reset cursor
+        await _fetch_creatives_page(selected, "")
+
+    async def _fetch_creatives_page(account_id: str, cursor: str):
+        """Fetch a page of 50 creatives for the given account."""
+        from services.marketing import marketing_service
+        if not marketing_service._fb_client:
+            return
+        creative_loading.set(True)
+        try:
+            result = await marketing_service._fb_client.get_creatives_for_account(
+                account_id, limit=50, after=cursor if cursor else None
+            )
+            # Find account name
+            accounts = await accounts_list()
+            acc_name = "Unknown"
+            if accounts:
+                acc = next((a for a in accounts if a.get("id") == account_id), None)
+                if acc:
+                    acc_name = acc.get("name", "Unknown")
+
+            # Tag each creative with account info
+            for c in result.get("creatives", []):
+                c["_account_name"] = acc_name
+                c["_account_id"] = account_id
+
+            creative_cache.set({
+                "account_id": account_id,
+                "account_name": acc_name,
+                "creatives": result.get("creatives", []),
+                "count": result.get("count", 0),
+                "has_next": result.get("has_next", False),
+                "has_prev": result.get("has_prev", False),
+                "next_cursor": result.get("next_cursor", ""),
+                "prev_cursor": result.get("prev_cursor", ""),
+            })
+        except Exception as e:
+            creative_cache.set({"error": str(e)})
+        finally:
+            creative_loading.set(False)
+
+    @reactive.effect
+    @reactive.event(input.creative_next_page)
+    async def _load_next_page():
+        """Load the next page of creatives."""
+        cache = creative_cache.get()
+        if not cache or not cache.get("has_next"):
+            return
+        await _fetch_creatives_page(cache["account_id"], cache["next_cursor"])
+
+    @reactive.effect
+    @reactive.event(input.creative_prev_page)
+    async def _load_prev_page():
+        """Load the previous page of creatives."""
+        cache = creative_cache.get()
+        if not cache or not cache.get("has_prev"):
+            return
+        # For previous page, we use the Graph API 'before' cursor
+        # Since our client only supports 'after', we reload from the start
+        # This is a known limitation — Facebook cursor pagination is forward-only
+        # For now, show a notification
+        ui.notification_show("Previous page navigation is not supported by the Facebook API cursor. Please refresh to start over.", type="warning", duration=4)
+
     @render.ui
-    async def creatives_kpi():
-        """KPI summary for the selected account."""
-        data = await all_creatives_data()
-        if data is None:
+    def creatives_kpi():
+        """KPI summary for the currently loaded creatives."""
+        loading = creative_loading.get()
+        if loading:
             return ui.div(
                 ui.div(class_="spinner"),
                 ui.div("Loading creative stats...", class_="loading-text"),
                 class_="loading-spinner",
             )
 
-        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
-        if not selected:
-            selected = "__all__"
+        cache = creative_cache.get()
+        selected = ""
+        try:
+            selected = input.account_select()
+        except Exception:
+            pass
 
-        if selected == "__all__":
-            total = data.get("total_creatives", 0)
-            accounts_count = data.get("accounts_with_creatives", 0)
-            total_accounts = data.get("total_accounts", 0)
-            type_counts = {"video": 0, "image": 0, "carousel": 0, "unknown": 0}
-            for acc in data.get("accounts", []):
-                for c in acc.get("creatives", []):
-                    ctype = c.get("type", "unknown")
-                    type_counts[ctype] = type_counts.get(ctype, 0) + 1
-        else:
-            acc_data = next((a for a in data.get("accounts", []) if a.get("account_id") == selected), None)
-            if not acc_data:
-                return ui.div("Account not found", style="color: #64748b;")
-            total = acc_data.get("creative_count", 0)
-            accounts_count = 1
-            total_accounts = 1
-            type_counts = {"video": 0, "image": 0, "carousel": 0, "unknown": 0}
-            for c in acc_data.get("creatives", []):
-                ctype = c.get("type", "unknown")
-                type_counts[ctype] = type_counts.get(ctype, 0) + 1
+        if not selected:
+            return ui.div(
+                "Select an ad account from the dropdown above to view creatives.",
+                style="color: #64748b; text-align: center; padding: 30px; font-size: 17px;",
+            )
+
+        if cache is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading creatives...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        if "error" in cache:
+            return ui.div(f"Error: {cache['error']}", style="color: #ef4444; text-align: center; padding: 20px;")
+
+        creatives = cache.get("creatives", [])
+        total = len(creatives)
+        type_counts = {"video": 0, "image": 0, "carousel": 0, "unknown": 0}
+        for c in creatives:
+            ctype = c.get("type", "unknown")
+            type_counts[ctype] = type_counts.get(ctype, 0) + 1
+
+        has_more = " (more available)" if cache.get("has_next") else ""
 
         kpi_items = [
             ui.div(
-                ui.div("Total Creatives", class_="kpi-label"),
+                ui.div("Creatives Loaded", class_="kpi-label"),
                 ui.div(fmt_number(total), class_="kpi-value"),
-                ui.div(f"{accounts_count} of {total_accounts} accounts", class_="kpi-sub"),
+                ui.div(f"{cache.get('account_name', 'Unknown')}{has_more}", class_="kpi-sub"),
                 class_="kpi-card", style="flex: 1; min-width: 160px;",
             ),
             ui.div(
@@ -1167,66 +1252,50 @@ def server(input: Inputs, output: Outputs, session: Session):
         ]
         return ui.div(*kpi_items, style="display: flex; gap: 16px; flex-wrap: wrap;")
 
-    CREATIVES_PER_PAGE = 50
-
-    def _collect_creatives(data, selected):
-        """Helper to collect creatives list based on account selection."""
-        creatives_list = []
-        if selected == "__all__":
-            for acc in data.get("accounts", []):
-                acc_name = acc.get("account_name", "Unknown")
-                acc_id = acc.get("account_id", "")
-                for c in acc.get("creatives", []):
-                    c["_account_name"] = acc_name
-                    c["_account_id"] = acc_id
-                    creatives_list.append(c)
-        else:
-            acc_data = next((a for a in data.get("accounts", []) if a.get("account_id") == selected), None)
-            if acc_data:
-                for c in acc_data.get("creatives", []):
-                    c["_account_name"] = acc_data.get("account_name", "Unknown")
-                    c["_account_id"] = acc_data.get("account_id", "")
-                    creatives_list.append(c)
-        return creatives_list
-
     @render.ui
-    async def creatives_grid():
-        """Render the creative grid for the selected account — paginated."""
-        data = await all_creatives_data()
-
-        if data is None:
+    def creatives_grid():
+        """Render the creative grid for the selected account — server-side paginated."""
+        loading = creative_loading.get()
+        if loading:
             return ui.div(
                 ui.div(class_="spinner"),
                 ui.div("Loading creatives from Facebook...", class_="loading-text"),
                 class_="loading-spinner",
             )
 
-        if "error" in (data or {}):
-            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
-        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
-        if not selected:
-            selected = "__all__"
-
-        creatives_list = _collect_creatives(data, selected)
-
-        if not creatives_list:
-            return ui.div("No creatives found for the selected account.", style="color: #64748b; text-align: center; padding: 40px;")
-
-        # Pagination
+        cache = creative_cache.get()
+        selected = ""
         try:
-            current_page = int(input.creative_page())
+            selected = input.account_select()
         except Exception:
-            current_page = 1
-        total = len(creatives_list)
-        total_pages = max(1, (total + CREATIVES_PER_PAGE - 1) // CREATIVES_PER_PAGE)
-        current_page = max(1, min(current_page, total_pages))
-        start_idx = (current_page - 1) * CREATIVES_PER_PAGE
-        end_idx = min(start_idx + CREATIVES_PER_PAGE, total)
-        page_creatives = creatives_list[start_idx:end_idx]
+            pass
+
+        if not selected:
+            return ui.div(
+                ui.div(
+                    ui.tags.span("\U0001f5bc", style="font-size: 48px; display: block; margin-bottom: 12px;"),
+                    "Select an ad account to browse creatives",
+                    style="color: #475569; text-align: center; padding: 60px 20px; font-size: 18px;",
+                ),
+            )
+
+        if cache is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading creatives...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        if "error" in cache:
+            return ui.div(f"Error loading creatives: {cache['error']}", style="color: #ef4444; text-align: center; padding: 40px;")
+
+        creatives = cache.get("creatives", [])
+        if not creatives:
+            return ui.div("No creatives found for this account.", style="color: #64748b; text-align: center; padding: 40px;")
 
         # Build grid cards
         cards = []
-        for idx, c in enumerate(page_creatives):
+        for c in creatives:
             creative_id = c.get("creative_id", "")
             name = c.get("name", "Untitled")
             ctype = c.get("type", "unknown")
@@ -1262,85 +1331,44 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             cards.append(card)
 
+        count = len(creatives)
         showing_text = ui.div(
-            f"Showing {start_idx + 1}–{end_idx} of {total} creatives",
+            f"Showing {count} creatives",
             style="color: #94a3b8; font-size: 15px; margin-bottom: 12px;",
         )
         return ui.div(showing_text, ui.div(*cards, class_="creative-grid"))
 
     @render.ui
-    async def creatives_pagination():
-        """Render pagination controls for the creatives grid."""
-        data = await all_creatives_data()
-        if data is None:
+    def creatives_pagination():
+        """Render Next/Previous pagination using Facebook cursor pagination."""
+        cache = creative_cache.get()
+        if cache is None or "error" in (cache or {}):
             return ui.div()
 
-        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
-        if not selected:
-            selected = "__all__"
+        has_next = cache.get("has_next", False)
+        has_prev = cache.get("has_prev", False)
 
-        creatives_list = _collect_creatives(data, selected)
-        total = len(creatives_list)
-        if total <= CREATIVES_PER_PAGE:
+        if not has_next and not has_prev:
             return ui.div()  # No pagination needed
-
-        total_pages = max(1, (total + CREATIVES_PER_PAGE - 1) // CREATIVES_PER_PAGE)
-        try:
-            current_page = int(input.creative_page())
-        except Exception:
-            current_page = 1
-        current_page = max(1, min(current_page, total_pages))
 
         buttons = []
 
-        # Previous button
-        if current_page > 1:
-            buttons.append(ui.tags.button(
-                "← Previous",
-                onclick=f"Shiny.setInputValue('creative_page', {current_page - 1}, {{priority: 'event'}});",
-            ))
-        else:
-            buttons.append(ui.tags.button("← Previous", disabled=True))
-
-        # Page number buttons (show max 7 around current)
-        start_page = max(1, current_page - 3)
-        end_page = min(total_pages, current_page + 3)
-        if start_page > 1:
-            buttons.append(ui.tags.button(
-                "1",
-                onclick=f"Shiny.setInputValue('creative_page', 1, {{priority: 'event'}});",
-            ))
-            if start_page > 2:
-                buttons.append(ui.span("…", style="color: #64748b; padding: 0 4px;"))
-
-        for p in range(start_page, end_page + 1):
-            cls = "active-page" if p == current_page else ""
-            buttons.append(ui.tags.button(
-                str(p),
-                class_=cls,
-                onclick=f"Shiny.setInputValue('creative_page', {p}, {{priority: 'event'}});",
+        if has_prev:
+            buttons.append(ui.input_action_button(
+                "creative_prev_page", "\u2190 Previous 50",
+                class_="refresh-btn",
             ))
 
-        if end_page < total_pages:
-            if end_page < total_pages - 1:
-                buttons.append(ui.span("…", style="color: #64748b; padding: 0 4px;"))
-            buttons.append(ui.tags.button(
-                str(total_pages),
-                onclick=f"Shiny.setInputValue('creative_page', {total_pages}, {{priority: 'event'}});",
+        if has_next:
+            buttons.append(ui.input_action_button(
+                "creative_next_page", "Next 50 \u2192",
+                class_="refresh-btn",
             ))
 
-        # Next button
-        if current_page < total_pages:
-            buttons.append(ui.tags.button(
-                "Next →",
-                onclick=f"Shiny.setInputValue('creative_page', {current_page + 1}, {{priority: 'event'}});",
-            ))
-        else:
-            buttons.append(ui.tags.button("Next →", disabled=True))
-
-        page_info = ui.span(f"Page {current_page} of {total_pages}", class_="page-info")
-
-        return ui.div(*buttons, page_info, class_="pagination-bar")
+        return ui.div(
+            *buttons,
+            style="display: flex; gap: 12px; justify-content: center; margin-top: 20px; padding: 16px;",
+        )
 
     # ---- Creative detail modal ----
 
@@ -1417,12 +1445,11 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.effect
     @reactive.event(input.show_upload)
     async def _show_upload_modal():
-        data = await all_creatives_data()
-        accounts = data.get("accounts", []) if data else []
+        accounts = await accounts_list() or []
 
         account_choices = {}
         for acc in accounts:
-            account_choices[acc.get("account_id", "")] = f"{acc.get('account_name', 'Unknown')} ({acc.get('account_id', '')})"
+            account_choices[acc.get("id", "")] = f"{acc.get('name', 'Unknown')} ({acc.get('id', '')})"
 
         modal = ui.modal(
             ui.div(

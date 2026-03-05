@@ -467,40 +467,82 @@ class FacebookAdsClient:
         self,
         account_id: str,
         fields: str = "id,name,title,body,image_url,thumbnail_url,object_story_spec,status,effective_object_story_id",
-        limit: int = 500,
-    ) -> List[Dict[str, Any]]:
+        limit: int = 50,
+        after: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
-        Fetch all ad creatives for a specific ad account.
+        Fetch ad creatives for a specific ad account with server-side pagination.
 
         Args:
             account_id: The ad account ID (e.g., act_123456).
             fields: Comma-separated fields to retrieve.
-            limit: Max creatives per page.
+            limit: Max creatives per page (default 50).
+            after: Cursor for the next page of results.
 
         Returns:
-            List of creative dicts.
+            Dict with 'data' (list of creatives), 'paging' (cursor info), and 'total_count'.
         """
         path = f"{account_id}/adcreatives"
         params = {"fields": fields, "limit": str(limit)}
+        if after:
+            params["after"] = after
+
         result = await self._request("GET", path, params=params)
         creatives = result.get("data", [])
 
-        # Handle pagination
-        while result.get("paging", {}).get("next"):
-            next_url = result["paging"]["next"]
-            client = await self._get_client()
-            response = await client.get(next_url)
-            if response.status_code == 200:
-                result = response.json()
-                creatives.extend(result.get("data", []))
-            else:
-                break
+        # Extract pagination cursors
+        paging = result.get("paging", {})
+        cursors = paging.get("cursors", {})
+        has_next = bool(paging.get("next"))
+        has_prev = bool(paging.get("previous"))
+        next_cursor = cursors.get("after", "") if has_next else ""
+        prev_cursor = cursors.get("before", "") if has_prev else ""
+
+        # Normalize creatives
+        normalized = []
+        for c in creatives:
+            story_spec = c.get("object_story_spec", {}) or {}
+            creative_type = "unknown"
+            preview_url = c.get("image_url") or c.get("thumbnail_url") or ""
+
+            if story_spec.get("video_data"):
+                creative_type = "video"
+                video_data = story_spec["video_data"]
+                preview_url = preview_url or video_data.get("image_url", "")
+            elif story_spec.get("link_data"):
+                creative_type = "image"
+                link_data = story_spec["link_data"]
+                preview_url = preview_url or link_data.get("image_hash", "")
+                if link_data.get("child_attachments"):
+                    creative_type = "carousel"
+            elif story_spec.get("photo_data"):
+                creative_type = "image"
+
+            normalized.append({
+                "creative_id": c.get("id", ""),
+                "name": c.get("name", "Untitled"),
+                "title": c.get("title", ""),
+                "body": c.get("body", ""),
+                "type": creative_type,
+                "status": c.get("status", "UNKNOWN"),
+                "image_url": c.get("image_url", ""),
+                "thumbnail_url": c.get("thumbnail_url", ""),
+                "preview_url": preview_url,
+            })
 
         logger.info(
-            f"Fetched {len(creatives)} creatives for {account_id}",
-            extra={"account_id": account_id, "creative_count": len(creatives)},
+            f"Fetched {len(normalized)} creatives for {account_id} (page, has_next={has_next})",
+            extra={"account_id": account_id, "creative_count": len(normalized), "has_next": has_next},
         )
-        return creatives
+
+        return {
+            "creatives": normalized,
+            "count": len(normalized),
+            "has_next": has_next,
+            "has_prev": has_prev,
+            "next_cursor": next_cursor,
+            "prev_cursor": prev_cursor,
+        }
 
     async def get_all_creatives(self) -> Dict[str, Any]:
         """
