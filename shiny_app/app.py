@@ -35,31 +35,31 @@ def fmt_number(value):
 # ============================================
 app_ui = ui.page_fluid(
     ui.tags.style("""
-        body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+        body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; font-size: 18px; }
         .card { background: #1a1d27; border: 1px solid #2d3348; border-radius: 10px; }
-        .card-header { border-bottom: 1px solid #2d3348; padding: 12px 16px; font-weight: 600; font-size: 14px; color: #94a3b8; }
+        .card-header { border-bottom: 1px solid #2d3348; padding: 14px 18px; font-weight: 600; font-size: 18px; color: #94a3b8; }
         .card-body { padding: 16px; }
-        .kpi-value { font-size: 28px; font-weight: 700; color: #f1f5f9; letter-spacing: -0.5px; }
-        .kpi-label { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-        .kpi-sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+        .kpi-value { font-size: 34px; font-weight: 700; color: #f1f5f9; letter-spacing: -0.5px; }
+        .kpi-label { font-size: 16px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .kpi-sub { font-size: 15px; color: #94a3b8; margin-top: 2px; }
         .kpi-card { background: #1a1d27; border: 1px solid #2d3348; border-radius: 10px; padding: 20px; }
-        .badge-active { background: #065f46; color: #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .badge-paused { background: #78350f; color: #fcd34d; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .badge-archived { background: #7f1d1d; color: #fca5a5; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 10px 12px; color: #64748b; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3348; }
-        td { padding: 10px 12px; border-bottom: 1px solid #1e2235; color: #cbd5e1; }
+        .badge-active { background: #065f46; color: #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .badge-paused { background: #78350f; color: #fcd34d; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .badge-archived { background: #7f1d1d; color: #fca5a5; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; font-size: 17px; }
+        th { text-align: left; padding: 12px 14px; color: #64748b; font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3348; }
+        td { padding: 12px 14px; border-bottom: 1px solid #1e2235; color: #cbd5e1; }
         tr:hover td { background: #1e2235; }
         .header-bar { background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%); border-bottom: 1px solid #2d3348; padding: 20px 24px; margin: -16px -16px 24px -16px; border-radius: 0; }
-        .header-title { font-size: 20px; font-weight: 700; color: #f1f5f9; }
-        .header-sub { font-size: 13px; color: #64748b; margin-top: 4px; }
-        .source-badge { background: #1e3a5f; color: #7dd3fc; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .refresh-btn { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .header-title { font-size: 26px; font-weight: 700; color: #f1f5f9; }
+        .header-sub { font-size: 17px; color: #64748b; margin-top: 4px; }
+        .source-badge { background: #1e3a5f; color: #7dd3fc; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .refresh-btn { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 17px; font-weight: 600; }
         .refresh-btn:hover { background: #1d4ed8; }
-        .period-info { font-size: 12px; color: #64748b; }
+        .period-info { font-size: 16px; color: #64748b; }
         /* Tab styling */
         .nav-tabs { border-bottom: 1px solid #2d3348; }
-        .nav-tabs .nav-link { color: #64748b; border: none; padding: 12px 20px; font-weight: 600; font-size: 14px; }
+        .nav-tabs .nav-link { color: #64748b; border: none; padding: 14px 24px; font-weight: 600; font-size: 18px; }
         .nav-tabs .nav-link:hover { color: #e2e8f0; border: none; background: #1a1d27; }
         .nav-tabs .nav-link.active { color: #22d3ee; border: none; border-bottom: 2px solid #22d3ee; background: transparent; }
         .tab-content { padding-top: 24px; }
@@ -79,22 +79,22 @@ app_ui = ui.page_fluid(
             background: #0f1117; color: #374151; font-size: 48px;
         }
         .creative-info { padding: 14px; }
-        .creative-name { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .creative-id { font-size: 11px; color: #475569; font-family: monospace; margin-bottom: 8px; }
+        .creative-name { font-size: 17px; font-weight: 600; color: #e2e8f0; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .creative-id { font-size: 14px; color: #475569; font-family: monospace; margin-bottom: 8px; }
         .creative-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .type-badge-video { background: #1e3a5f; color: #7dd3fc; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .type-badge-image { background: #1a3a2a; color: #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .type-badge-carousel { background: #3b1f5e; color: #c4b5fd; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
-        .type-badge-unknown { background: #374151; color: #9ca3af; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+        .type-badge-video { background: #1e3a5f; color: #7dd3fc; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .type-badge-image { background: #1a3a2a; color: #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .type-badge-carousel { background: #3b1f5e; color: #c4b5fd; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .type-badge-unknown { background: #374151; color: #9ca3af; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         /* Account selector bar */
         .creatives-toolbar {
             display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
             padding: 16px; background: #1a1d27; border: 1px solid #2d3348; border-radius: 10px;
         }
-        .creatives-toolbar label { color: #94a3b8; font-size: 13px; font-weight: 600; }
+        .creatives-toolbar label { color: #94a3b8; font-size: 17px; font-weight: 600; }
         .creatives-toolbar select {
             background: #0f1117; color: #e2e8f0; border: 1px solid #2d3348;
-            border-radius: 6px; padding: 8px 12px; font-size: 13px; min-width: 300px;
+            border-radius: 6px; padding: 10px 14px; font-size: 17px; min-width: 300px;
         }
         .creatives-toolbar select:focus { border-color: #22d3ee; outline: none; }
         /* Upload area */
@@ -105,7 +105,18 @@ app_ui = ui.page_fluid(
         }
         .upload-area:hover { border-color: #22d3ee; }
         .upload-icon { font-size: 36px; color: #374151; margin-bottom: 8px; }
-        .upload-text { color: #64748b; font-size: 13px; }
+        .upload-text { color: #64748b; font-size: 17px; }
+        /* Loading spinner */
+        .loading-spinner {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 60px 20px; color: #64748b;
+        }
+        .spinner {
+            width: 48px; height: 48px; border: 4px solid #2d3348; border-top: 4px solid #22d3ee;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { font-size: 16px; color: #64748b; }
         /* Modal overrides */
         .modal-content { background: #1a1d27 !important; border: 1px solid #2d3348 !important; color: #e2e8f0 !important; }
         .modal-header { border-bottom: 1px solid #2d3348 !important; }
@@ -114,7 +125,7 @@ app_ui = ui.page_fluid(
         .btn-close { filter: invert(1); }
         /* Action buttons in modal */
         .action-btn {
-            padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            padding: 10px 20px; border-radius: 6px; font-size: 17px; font-weight: 600;
             border: none; cursor: pointer; transition: background 0.2s;
         }
         .action-btn-primary { background: #2563eb; color: white; }
@@ -125,8 +136,8 @@ app_ui = ui.page_fluid(
         .action-btn-secondary:hover { background: #4b5563; }
         /* Detail grid in modal */
         .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
-        .detail-item label { display: block; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
-        .detail-item span { font-size: 14px; color: #e2e8f0; }
+        .detail-item label { display: block; font-size: 15px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .detail-item span { font-size: 18px; color: #e2e8f0; }
     """),
 
     # Header
@@ -258,7 +269,13 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     async def total_spend_section():
         data = await total_spend_data()
-        if data is None or "error" in data:
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading total spend data...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+        if "error" in (data or {}):
             return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 24px;")
 
         period = data.get("period", {})
@@ -425,7 +442,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         """Render the account dropdown based on fetched data."""
         data = await all_creatives_data()
         if data is None:
-            return ui.div("Loading...", style="color: #64748b;")
+            return ui.div("Loading accounts...", style="color: #64748b; font-size: 16px;")
 
         accounts = data.get("accounts", [])
         choices = {"__all__": f"All Accounts ({data.get('total_creatives', 0)} creatives)"}
@@ -441,7 +458,11 @@ def server(input: Inputs, output: Outputs, session: Session):
         """KPI summary for the selected account."""
         data = await all_creatives_data()
         if data is None:
-            return ui.div()
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading creative stats...", class_="loading-text"),
+                class_="loading-spinner",
+            )
 
         selected = input.account_select() if hasattr(input, "account_select") else "__all__"
         if not selected:
@@ -498,9 +519,16 @@ def server(input: Inputs, output: Outputs, session: Session):
     async def creatives_grid():
         """Render the creative grid for the selected account."""
         data = await all_creatives_data()
-        if data is None or "error" in (data or {}):
-            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
 
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading creatives from Facebook...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        if "error" in (data or {}):
+            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
         selected = input.account_select() if hasattr(input, "account_select") else "__all__"
         if not selected:
             selected = "__all__"
