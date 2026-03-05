@@ -42,7 +42,11 @@ def fmt_budget(value_cents, currency="USD"):
 # UI
 # ============================================
 app_ui = ui.page_fluid(
+    ui.busy_indicators.use(spinners=False, pulse=True),
     ui.tags.style("""
+        /* Shiny busy pulse overlay */
+        .shiny-busy { opacity: 0.6; transition: opacity 0.3s; }
+        .recalculating { opacity: 0.4; }
         body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; font-size: 18px; }
         .card { background: #1a1d27; border: 1px solid #2d3348; border-radius: 10px; }
         .card-header { border-bottom: 1px solid #2d3348; padding: 14px 18px; font-weight: 600; font-size: 18px; color: #94a3b8; }
@@ -116,6 +120,7 @@ app_ui = ui.page_fluid(
         .upload-icon { font-size: 36px; color: #374151; margin-bottom: 8px; }
         .upload-text { color: #64748b; font-size: 17px; }
         /* Loading spinner */
+        .shiny-output-error { color: #f87171; padding: 20px; }
         .loading-spinner {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             padding: 60px 20px; color: #64748b;
@@ -554,9 +559,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             for c in campaigns if c.get("performance")
         )
 
-        # Determine primary currency
-        currencies = set(c.get("_currency", "USD") for c in campaigns)
-        primary_currency = currencies.pop() if len(currencies) == 1 else "USD"
+        # Group spend by currency so each currency shows its own total
+        spend_by_currency = {}
+        for c in campaigns:
+            cur = c.get("_currency", "USD")
+            perf = c.get("performance")
+            if perf:
+                spend_by_currency[cur] = spend_by_currency.get(cur, 0) + perf.get("spend", 0)
 
         kpi_items = [
             ui.div(
@@ -577,13 +586,31 @@ def server(input: Inputs, output: Outputs, session: Session):
                 ui.div("On hold", class_="kpi-sub"),
                 class_="kpi-card", style="flex: 1; min-width: 160px;",
             ),
-            ui.div(
-                ui.div("7-Day Spend", class_="kpi-label"),
-                ui.div(fmt_currency(total_spend, primary_currency), class_="kpi-value"),
-                ui.div(f"Last 7 days ({primary_currency})", class_="kpi-sub"),
-                class_="kpi-card", style="flex: 1; min-width: 160px;",
-            ),
         ]
+
+        # Add a 7-Day Spend card for each currency
+        for cur, spend in spend_by_currency.items():
+            sym = CURRENCY_SYMBOLS.get(cur, cur)
+            kpi_items.append(
+                ui.div(
+                    ui.div(f"7-Day Spend ({cur})", class_="kpi-label"),
+                    ui.div(fmt_currency(spend, cur), class_="kpi-value"),
+                    ui.div(f"Last 7 days in {cur}", class_="kpi-sub"),
+                    class_="kpi-card", style="flex: 1; min-width: 160px;",
+                ),
+            )
+
+        # If no spend data at all, show a placeholder card
+        if not spend_by_currency:
+            kpi_items.append(
+                ui.div(
+                    ui.div("7-Day Spend", class_="kpi-label"),
+                    ui.div("—", class_="kpi-value"),
+                    ui.div("No spend data", class_="kpi-sub"),
+                    class_="kpi-card", style="flex: 1; min-width: 160px;",
+                ),
+            )
+
         return ui.div(*kpi_items, style="display: flex; gap: 16px; flex-wrap: wrap;")
 
     @render.ui
