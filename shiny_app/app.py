@@ -131,6 +131,20 @@ app_ui = ui.page_fluid(
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .loading-text { font-size: 16px; color: #64748b; }
+        /* Pagination */
+        .pagination-bar {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 20px 0; margin-top: 16px;
+        }
+        .pagination-bar .page-info { color: #94a3b8; font-size: 16px; margin: 0 16px; }
+        .pagination-bar button {
+            background: #1a1d27; color: #e2e8f0; border: 1px solid #2d3348;
+            padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 600;
+            transition: all 0.2s;
+        }
+        .pagination-bar button:hover { background: #2d3348; border-color: #22d3ee; }
+        .pagination-bar button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .pagination-bar button.active-page { background: #2563eb; border-color: #2563eb; color: white; }
         /* Modal overrides */
         .modal-content { background: #1a1d27 !important; border: 1px solid #2d3348 !important; color: #e2e8f0 !important; }
         .modal-header { border-bottom: 1px solid #2d3348 !important; }
@@ -298,9 +312,12 @@ app_ui = ui.page_fluid(
                 style="margin-bottom: 20px;",
             ),
 
-            # Creative grid
+            # Creative grid + pagination
             ui.div(
                 ui.output_ui("creatives_grid"),
+            ),
+            ui.div(
+                ui.output_ui("creatives_pagination"),
             ),
         ),
     ),
@@ -1150,25 +1167,10 @@ def server(input: Inputs, output: Outputs, session: Session):
         ]
         return ui.div(*kpi_items, style="display: flex; gap: 16px; flex-wrap: wrap;")
 
-    @render.ui
-    async def creatives_grid():
-        """Render the creative grid for the selected account."""
-        data = await all_creatives_data()
+    CREATIVES_PER_PAGE = 50
 
-        if data is None:
-            return ui.div(
-                ui.div(class_="spinner"),
-                ui.div("Loading creatives from Facebook...", class_="loading-text"),
-                class_="loading-spinner",
-            )
-
-        if "error" in (data or {}):
-            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
-        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
-        if not selected:
-            selected = "__all__"
-
-        # Collect creatives based on selection
+    def _collect_creatives(data, selected):
+        """Helper to collect creatives list based on account selection."""
         creatives_list = []
         if selected == "__all__":
             for acc in data.get("accounts", []):
@@ -1185,13 +1187,46 @@ def server(input: Inputs, output: Outputs, session: Session):
                     c["_account_name"] = acc_data.get("account_name", "Unknown")
                     c["_account_id"] = acc_data.get("account_id", "")
                     creatives_list.append(c)
+        return creatives_list
+
+    @render.ui
+    async def creatives_grid():
+        """Render the creative grid for the selected account — paginated."""
+        data = await all_creatives_data()
+
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading creatives from Facebook...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        if "error" in (data or {}):
+            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
+        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
+        if not selected:
+            selected = "__all__"
+
+        creatives_list = _collect_creatives(data, selected)
 
         if not creatives_list:
             return ui.div("No creatives found for the selected account.", style="color: #64748b; text-align: center; padding: 40px;")
 
+        # Pagination
+        try:
+            current_page = int(input.creative_page())
+        except Exception:
+            current_page = 1
+        total = len(creatives_list)
+        total_pages = max(1, (total + CREATIVES_PER_PAGE - 1) // CREATIVES_PER_PAGE)
+        current_page = max(1, min(current_page, total_pages))
+        start_idx = (current_page - 1) * CREATIVES_PER_PAGE
+        end_idx = min(start_idx + CREATIVES_PER_PAGE, total)
+        page_creatives = creatives_list[start_idx:end_idx]
+
         # Build grid cards
         cards = []
-        for idx, c in enumerate(creatives_list):
+        for idx, c in enumerate(page_creatives):
             creative_id = c.get("creative_id", "")
             name = c.get("name", "Untitled")
             ctype = c.get("type", "unknown")
@@ -1227,7 +1262,85 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             cards.append(card)
 
-        return ui.div(*cards, class_="creative-grid")
+        showing_text = ui.div(
+            f"Showing {start_idx + 1}–{end_idx} of {total} creatives",
+            style="color: #94a3b8; font-size: 15px; margin-bottom: 12px;",
+        )
+        return ui.div(showing_text, ui.div(*cards, class_="creative-grid"))
+
+    @render.ui
+    async def creatives_pagination():
+        """Render pagination controls for the creatives grid."""
+        data = await all_creatives_data()
+        if data is None:
+            return ui.div()
+
+        selected = input.account_select() if hasattr(input, "account_select") else "__all__"
+        if not selected:
+            selected = "__all__"
+
+        creatives_list = _collect_creatives(data, selected)
+        total = len(creatives_list)
+        if total <= CREATIVES_PER_PAGE:
+            return ui.div()  # No pagination needed
+
+        total_pages = max(1, (total + CREATIVES_PER_PAGE - 1) // CREATIVES_PER_PAGE)
+        try:
+            current_page = int(input.creative_page())
+        except Exception:
+            current_page = 1
+        current_page = max(1, min(current_page, total_pages))
+
+        buttons = []
+
+        # Previous button
+        if current_page > 1:
+            buttons.append(ui.tags.button(
+                "← Previous",
+                onclick=f"Shiny.setInputValue('creative_page', {current_page - 1}, {{priority: 'event'}});",
+            ))
+        else:
+            buttons.append(ui.tags.button("← Previous", disabled=True))
+
+        # Page number buttons (show max 7 around current)
+        start_page = max(1, current_page - 3)
+        end_page = min(total_pages, current_page + 3)
+        if start_page > 1:
+            buttons.append(ui.tags.button(
+                "1",
+                onclick=f"Shiny.setInputValue('creative_page', 1, {{priority: 'event'}});",
+            ))
+            if start_page > 2:
+                buttons.append(ui.span("…", style="color: #64748b; padding: 0 4px;"))
+
+        for p in range(start_page, end_page + 1):
+            cls = "active-page" if p == current_page else ""
+            buttons.append(ui.tags.button(
+                str(p),
+                class_=cls,
+                onclick=f"Shiny.setInputValue('creative_page', {p}, {{priority: 'event'}});",
+            ))
+
+        if end_page < total_pages:
+            if end_page < total_pages - 1:
+                buttons.append(ui.span("…", style="color: #64748b; padding: 0 4px;"))
+            buttons.append(ui.tags.button(
+                str(total_pages),
+                onclick=f"Shiny.setInputValue('creative_page', {total_pages}, {{priority: 'event'}});",
+            ))
+
+        # Next button
+        if current_page < total_pages:
+            buttons.append(ui.tags.button(
+                "Next →",
+                onclick=f"Shiny.setInputValue('creative_page', {current_page + 1}, {{priority: 'event'}});",
+            ))
+        else:
+            buttons.append(ui.tags.button("Next →", disabled=True))
+
+        page_info = ui.span(f"Page {current_page} of {total_pages}", class_="page-info")
+
+        return ui.div(*buttons, page_info, class_="pagination-bar")
 
     # ---- Creative detail modal ----
 
