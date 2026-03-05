@@ -626,6 +626,25 @@ def server(input: Inputs, output: Outputs, session: Session):
         if not campaigns:
             return ui.div("No campaigns found for the selected account.", style="color: #64748b; text-align: center; padding: 40px;")
 
+        # Sort: ACTIVE first, then by most recent date (start_time or created_time) descending
+        def campaign_sort_key(c):
+            status = c.get("status", "UNKNOWN").upper()
+            status_order = 0 if status == "ACTIVE" else (1 if status == "PAUSED" else 2)
+            # Use start_time if available, fall back to created_time
+            date_str = c.get("start_time") or c.get("created_time") or "1970-01-01"
+            return (status_order, date_str)
+
+        campaigns.sort(key=lambda c: (campaign_sort_key(c)[0], campaign_sort_key(c)[1]), reverse=False)
+        # Reverse the date within each status group: sort by status asc, date desc
+        campaigns.sort(key=lambda c: campaign_sort_key(c)[0])
+        from itertools import groupby
+        sorted_campaigns = []
+        for _, group in groupby(campaigns, key=lambda c: campaign_sort_key(c)[0]):
+            group_list = list(group)
+            group_list.sort(key=lambda c: c.get("start_time") or c.get("created_time") or "1970-01-01", reverse=True)
+            sorted_campaigns.extend(group_list)
+        campaigns = sorted_campaigns
+
         rows = []
         for c in campaigns:
             campaign_id = c.get("id", "")
