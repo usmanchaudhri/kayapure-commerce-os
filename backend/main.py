@@ -312,6 +312,120 @@ async def all_creatives(
 
 
 # ============================================
+# Campaign Management Endpoints
+# ============================================
+
+@app.get("/api/facebook-ads/campaigns")
+async def get_all_campaigns(
+    account_id: Optional[str] = Query(default=None, description="Filter by ad account ID"),
+    days: int = Query(default=7, description="Days of insights to include"),
+):
+    """Fetch all campaigns across all accounts with performance insights."""
+    try:
+        if not marketing_service._fb_client:
+            return {"error": "Facebook Ads client not configured"}
+
+        if account_id:
+            campaigns = await marketing_service._fb_client.get_campaigns_detailed(account_id)
+            # Enrich with insights
+            from datetime import date as date_type, timedelta
+            end_date = date_type.today()
+            start_date = end_date - timedelta(days=days)
+            time_range = {"since": start_date.strftime("%Y-%m-%d"), "until": end_date.strftime("%Y-%m-%d")}
+
+            import asyncio
+            async def enrich(c):
+                try:
+                    insights = await marketing_service._fb_client.get_campaign_insights(c["id"], time_range=time_range)
+                    rows = insights.get("data", [])
+                    if rows:
+                        perf = rows[0]
+                        c["performance"] = {
+                            "spend": float(perf.get("spend", 0)),
+                            "impressions": int(perf.get("impressions", 0)),
+                            "clicks": int(perf.get("clicks", 0)),
+                            "cpc": float(perf.get("cpc", 0)),
+                            "ctr": float(perf.get("ctr", 0)),
+                            "reach": int(perf.get("reach", 0)),
+                        }
+                    else:
+                        c["performance"] = None
+                except Exception:
+                    c["performance"] = None
+                return c
+
+            campaigns = await asyncio.gather(*[enrich(c) for c in campaigns])
+            return {
+                "total_campaigns": len(campaigns),
+                "insights_period": time_range,
+                "accounts": [{
+                    "account_id": account_id,
+                    "campaigns": list(campaigns),
+                }],
+            }
+        else:
+            result = await marketing_service._fb_client.get_all_campaigns(
+                include_insights=True, days=days
+            )
+            return result
+    except Exception as e:
+        logger.error(f"Failed to fetch campaigns: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/facebook-ads/campaigns/{campaign_id}/pause")
+async def pause_campaign(campaign_id: str):
+    """Pause a campaign."""
+    try:
+        if not marketing_service._fb_client:
+            return {"error": "Facebook Ads client not configured"}
+        result = await marketing_service._fb_client.update_campaign(campaign_id, status="PAUSED")
+        return {"success": True, "result": result, "action": "paused", "campaign_id": campaign_id}
+    except Exception as e:
+        logger.error(f"Failed to pause campaign {campaign_id}: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/facebook-ads/campaigns/{campaign_id}/activate")
+async def activate_campaign(campaign_id: str):
+    """Activate (resume) a paused campaign."""
+    try:
+        if not marketing_service._fb_client:
+            return {"error": "Facebook Ads client not configured"}
+        result = await marketing_service._fb_client.update_campaign(campaign_id, status="ACTIVE")
+        return {"success": True, "result": result, "action": "activated", "campaign_id": campaign_id}
+    except Exception as e:
+        logger.error(f"Failed to activate campaign {campaign_id}: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/facebook-ads/campaigns/{campaign_id}/delete")
+async def delete_campaign(campaign_id: str):
+    """Delete (archive) a campaign."""
+    try:
+        if not marketing_service._fb_client:
+            return {"error": "Facebook Ads client not configured"}
+        result = await marketing_service._fb_client.delete_campaign(campaign_id)
+        return {"success": True, "result": result, "action": "deleted", "campaign_id": campaign_id}
+    except Exception as e:
+        logger.error(f"Failed to delete campaign {campaign_id}: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/facebook-ads/campaigns/{campaign_id}/budget")
+async def update_campaign_budget(campaign_id: str, daily_budget: int = Query(..., description="New daily budget in cents")):
+    """Update a campaign's daily budget."""
+    try:
+        if not marketing_service._fb_client:
+            return {"error": "Facebook Ads client not configured"}
+        result = await marketing_service._fb_client.update_campaign(campaign_id, daily_budget=daily_budget)
+        return {"success": True, "result": result, "action": "budget_updated", "campaign_id": campaign_id, "new_budget": daily_budget}
+    except Exception as e:
+        logger.error(f"Failed to update budget for campaign {campaign_id}: {e}")
+        return {"error": str(e)}
+
+
+# ============================================
 # Logs Endpoint — view structured logs from the dashboard
 # ============================================
 @app.get("/api/logs")

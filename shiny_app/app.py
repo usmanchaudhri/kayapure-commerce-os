@@ -4,6 +4,7 @@ Embedded in FastAPI via ASGI mount at /dashboard.
 
 Tabs:
   - Dashboard: KPIs, spend trends, campaign insights, all-account totals
+  - Ad Campaigns: Campaign management — table, detail modal, pause/activate/delete/edit budget
   - Creatives: Creative management — grid view, detail modal, upload
 """
 
@@ -30,6 +31,13 @@ def fmt_number(value):
     return f"{value:,}"
 
 
+def fmt_budget(value_cents, currency="USD"):
+    """Format a budget value from cents to currency display."""
+    if value_cents is None or value_cents == 0:
+        return "—"
+    return fmt_currency(float(value_cents) / 100, currency)
+
+
 # ============================================
 # UI
 # ============================================
@@ -46,6 +54,7 @@ app_ui = ui.page_fluid(
         .badge-active { background: #065f46; color: #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         .badge-paused { background: #78350f; color: #fcd34d; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         .badge-archived { background: #7f1d1d; color: #fca5a5; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
+        .badge-deleted { background: #4a1d1d; color: #f87171; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         table { width: 100%; border-collapse: collapse; font-size: 17px; }
         th { text-align: left; padding: 12px 14px; color: #64748b; font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #2d3348; }
         td { padding: 12px 14px; border-bottom: 1px solid #1e2235; color: #cbd5e1; }
@@ -86,17 +95,17 @@ app_ui = ui.page_fluid(
         .type-badge-image { background: #1a3a2a; color: #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         .type-badge-carousel { background: #3b1f5e; color: #c4b5fd; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
         .type-badge-unknown { background: #374151; color: #9ca3af; padding: 3px 10px; border-radius: 9999px; font-size: 14px; font-weight: 600; }
-        /* Account selector bar */
-        .creatives-toolbar {
+        /* Toolbar */
+        .toolbar {
             display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
             padding: 16px; background: #1a1d27; border: 1px solid #2d3348; border-radius: 10px;
         }
-        .creatives-toolbar label { color: #94a3b8; font-size: 17px; font-weight: 600; }
-        .creatives-toolbar select {
+        .toolbar label { color: #94a3b8; font-size: 17px; font-weight: 600; }
+        .toolbar select {
             background: #0f1117; color: #e2e8f0; border: 1px solid #2d3348;
             border-radius: 6px; padding: 10px 14px; font-size: 17px; min-width: 300px;
         }
-        .creatives-toolbar select:focus { border-color: #22d3ee; outline: none; }
+        .toolbar select:focus { border-color: #22d3ee; outline: none; }
         /* Upload area */
         .upload-area {
             border: 2px dashed #2d3348; border-radius: 12px; padding: 32px;
@@ -123,7 +132,7 @@ app_ui = ui.page_fluid(
         .modal-footer { border-top: 1px solid #2d3348 !important; }
         .modal-title { color: #f1f5f9 !important; }
         .btn-close { filter: invert(1); }
-        /* Action buttons in modal */
+        /* Action buttons */
         .action-btn {
             padding: 10px 20px; border-radius: 6px; font-size: 17px; font-weight: 600;
             border: none; cursor: pointer; transition: background 0.2s;
@@ -132,12 +141,35 @@ app_ui = ui.page_fluid(
         .action-btn-primary:hover { background: #1d4ed8; }
         .action-btn-danger { background: #dc2626; color: white; }
         .action-btn-danger:hover { background: #b91c1c; }
+        .action-btn-warning { background: #d97706; color: white; }
+        .action-btn-warning:hover { background: #b45309; }
+        .action-btn-success { background: #059669; color: white; }
+        .action-btn-success:hover { background: #047857; }
         .action-btn-secondary { background: #374151; color: #e2e8f0; }
         .action-btn-secondary:hover { background: #4b5563; }
         /* Detail grid in modal */
         .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+        .detail-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 16px; }
         .detail-item label { display: block; font-size: 15px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
         .detail-item span { font-size: 18px; color: #e2e8f0; }
+        /* Campaign action buttons in table */
+        .campaign-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .campaign-actions button {
+            padding: 5px 12px; border-radius: 4px; font-size: 13px; font-weight: 600;
+            border: none; cursor: pointer; transition: background 0.2s;
+        }
+        .btn-view { background: #1e3a5f; color: #7dd3fc; }
+        .btn-view:hover { background: #1e4a7f; }
+        .btn-pause { background: #78350f; color: #fcd34d; }
+        .btn-pause:hover { background: #92400e; }
+        .btn-activate { background: #065f46; color: #6ee7b7; }
+        .btn-activate:hover { background: #047857; }
+        .btn-edit { background: #374151; color: #e2e8f0; }
+        .btn-edit:hover { background: #4b5563; }
+        .btn-delete { background: #7f1d1d; color: #fca5a5; }
+        .btn-delete:hover { background: #991b1b; }
+        /* Objective badge */
+        .badge-objective { background: #1e293b; color: #94a3b8; padding: 3px 10px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
     """),
 
     # Header
@@ -207,7 +239,37 @@ app_ui = ui.page_fluid(
             ),
         ),
 
-        # ---- Tab 2: Creatives ----
+        # ---- Tab 2: Ad Campaigns ----
+        ui.nav_panel(
+            "Ad Campaigns",
+
+            # Toolbar: Account selector
+            ui.div(
+                ui.div(
+                    ui.tags.label("Ad Account:", **{"for": "campaigns_account_select"}),
+                    ui.output_ui("campaigns_account_selector"),
+                    style="display: flex; align-items: center; gap: 12px; flex: 1;",
+                ),
+                class_="toolbar",
+            ),
+
+            # KPI summary
+            ui.div(
+                ui.output_ui("campaigns_kpi"),
+                style="margin-bottom: 20px;",
+            ),
+
+            # Campaigns table
+            ui.div(
+                ui.div(
+                    ui.div("Campaign Management", class_="card-header"),
+                    ui.div(ui.output_ui("campaigns_table"), class_="card-body"),
+                    class_="card",
+                ),
+            ),
+        ),
+
+        # ---- Tab 3: Creatives ----
         ui.nav_panel(
             "Creatives",
 
@@ -222,7 +284,7 @@ app_ui = ui.page_fluid(
                     ui.input_action_button("show_upload", "⬆ Upload New Creative", class_="refresh-btn"),
                     style="display: flex; align-items: center;",
                 ),
-                class_="creatives-toolbar",
+                class_="toolbar",
             ),
 
             # KPI summary row
@@ -425,7 +487,535 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.tags.tbody(*rows),
         )
 
-    # ---- Creatives tab reactives ----
+    # ============================================
+    # Ad Campaigns tab reactives
+    # ============================================
+
+    @reactive.calc
+    async def all_campaigns_data():
+        """Fetch all campaigns across all accounts with performance insights."""
+        input.refresh()
+        from services.marketing import marketing_service
+        if not marketing_service._fb_client:
+            return None
+        data = await marketing_service._fb_client.get_all_campaigns(include_insights=True, days=7)
+        return data
+
+    @render.ui
+    async def campaigns_account_selector():
+        """Render the account dropdown for the campaigns tab."""
+        data = await all_campaigns_data()
+        if data is None:
+            return ui.div("Loading accounts...", style="color: #64748b; font-size: 16px;")
+
+        accounts = data.get("accounts", [])
+        choices = {"__all__": f"All Accounts ({data.get('total_campaigns', 0)} campaigns)"}
+        for acc in accounts:
+            count = acc.get("campaign_count", 0)
+            label = f"{acc.get('account_name', 'Unknown')} ({acc.get('account_id', '')}) — {count} campaigns"
+            choices[acc.get("account_id", "")] = label
+
+        return ui.input_select("campaigns_account_select", None, choices=choices, width="100%")
+
+    @render.ui
+    async def campaigns_kpi():
+        """KPI summary for campaigns."""
+        data = await all_campaigns_data()
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading campaign data...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        selected = input.campaigns_account_select() if hasattr(input, "campaigns_account_select") else "__all__"
+        if not selected:
+            selected = "__all__"
+
+        # Collect campaigns based on selection
+        campaigns = []
+        if selected == "__all__":
+            for acc in data.get("accounts", []):
+                for c in acc.get("campaigns", []):
+                    c["_currency"] = acc.get("currency", "USD")
+                    campaigns.append(c)
+        else:
+            acc_data = next((a for a in data.get("accounts", []) if a.get("account_id") == selected), None)
+            if acc_data:
+                for c in acc_data.get("campaigns", []):
+                    c["_currency"] = acc_data.get("currency", "USD")
+                    campaigns.append(c)
+
+        total = len(campaigns)
+        active = sum(1 for c in campaigns if c.get("status", "").upper() == "ACTIVE")
+        paused = sum(1 for c in campaigns if c.get("status", "").upper() == "PAUSED")
+        total_spend = sum(
+            c.get("performance", {}).get("spend", 0)
+            for c in campaigns if c.get("performance")
+        )
+
+        # Determine primary currency
+        currencies = set(c.get("_currency", "USD") for c in campaigns)
+        primary_currency = currencies.pop() if len(currencies) == 1 else "USD"
+
+        kpi_items = [
+            ui.div(
+                ui.div("Total Campaigns", class_="kpi-label"),
+                ui.div(fmt_number(total), class_="kpi-value"),
+                ui.div(f"{data.get('total_accounts', 0)} accounts", class_="kpi-sub"),
+                class_="kpi-card", style="flex: 1; min-width: 160px;",
+            ),
+            ui.div(
+                ui.div("Active", class_="kpi-label"),
+                ui.div(fmt_number(active), class_="kpi-value", style="color: #6ee7b7;"),
+                ui.div("Currently running", class_="kpi-sub"),
+                class_="kpi-card", style="flex: 1; min-width: 160px;",
+            ),
+            ui.div(
+                ui.div("Paused", class_="kpi-label"),
+                ui.div(fmt_number(paused), class_="kpi-value", style="color: #fcd34d;"),
+                ui.div("On hold", class_="kpi-sub"),
+                class_="kpi-card", style="flex: 1; min-width: 160px;",
+            ),
+            ui.div(
+                ui.div("7-Day Spend", class_="kpi-label"),
+                ui.div(fmt_currency(total_spend, primary_currency), class_="kpi-value"),
+                ui.div(f"Last 7 days ({primary_currency})", class_="kpi-sub"),
+                class_="kpi-card", style="flex: 1; min-width: 160px;",
+            ),
+        ]
+        return ui.div(*kpi_items, style="display: flex; gap: 16px; flex-wrap: wrap;")
+
+    @render.ui
+    async def campaigns_table():
+        """Render the campaigns management table."""
+        data = await all_campaigns_data()
+
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading campaigns from Facebook...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        if "error" in (data or {}):
+            return ui.div("Facebook Ads client not configured or error occurred.", style="color: #64748b; text-align: center; padding: 40px;")
+
+        selected = input.campaigns_account_select() if hasattr(input, "campaigns_account_select") else "__all__"
+        if not selected:
+            selected = "__all__"
+
+        # Collect campaigns based on selection
+        campaigns = []
+        if selected == "__all__":
+            for acc in data.get("accounts", []):
+                for c in acc.get("campaigns", []):
+                    c["_account_name"] = acc.get("account_name", "Unknown")
+                    c["_account_id"] = acc.get("account_id", "")
+                    c["_currency"] = acc.get("currency", "USD")
+                    campaigns.append(c)
+        else:
+            acc_data = next((a for a in data.get("accounts", []) if a.get("account_id") == selected), None)
+            if acc_data:
+                for c in acc_data.get("campaigns", []):
+                    c["_account_name"] = acc_data.get("account_name", "Unknown")
+                    c["_account_id"] = acc_data.get("account_id", "")
+                    c["_currency"] = acc_data.get("currency", "USD")
+                    campaigns.append(c)
+
+        if not campaigns:
+            return ui.div("No campaigns found for the selected account.", style="color: #64748b; text-align: center; padding: 40px;")
+
+        rows = []
+        for c in campaigns:
+            campaign_id = c.get("id", "")
+            name = c.get("name", "—")
+            status = c.get("status", "UNKNOWN").upper()
+            objective = c.get("objective", "—")
+            currency = c.get("_currency", "USD")
+
+            # Budget — daily_budget is in cents
+            daily_budget = c.get("daily_budget")
+            lifetime_budget = c.get("lifetime_budget")
+            if daily_budget and int(daily_budget) > 0:
+                budget_display = f"{fmt_budget(int(daily_budget), currency)}/day"
+            elif lifetime_budget and int(lifetime_budget) > 0:
+                budget_display = f"{fmt_budget(int(lifetime_budget), currency)} lifetime"
+            else:
+                budget_display = "—"
+
+            # Created date
+            created_time = c.get("created_time", "")
+            created_display = created_time[:10] if created_time else "—"
+
+            # Performance
+            perf = c.get("performance")
+            if perf:
+                spend_display = fmt_currency(perf.get("spend", 0), currency)
+                clicks_display = fmt_number(perf.get("clicks", 0))
+                impressions_display = fmt_number(perf.get("impressions", 0))
+                ctr_display = f"{perf.get('ctr', 0):.2f}%"
+            else:
+                spend_display = "—"
+                clicks_display = "—"
+                impressions_display = "—"
+                ctr_display = "—"
+
+            # Status badge
+            if status == "ACTIVE":
+                badge_class, badge_label = "badge-active", "Active"
+            elif status == "PAUSED":
+                badge_class, badge_label = "badge-paused", "Paused"
+            elif status == "DELETED":
+                badge_class, badge_label = "badge-deleted", "Deleted"
+            else:
+                badge_class, badge_label = "badge-archived", status.title()
+
+            # Objective badge — clean up the Facebook objective name
+            obj_display = objective.replace("OUTCOME_", "").replace("_", " ").title() if objective != "—" else "—"
+
+            # Action buttons — serialize campaign data for JS
+            c_json = json.dumps(json.dumps({
+                "id": campaign_id,
+                "name": name,
+                "status": status,
+                "objective": objective,
+                "daily_budget": daily_budget,
+                "lifetime_budget": lifetime_budget,
+                "created_time": created_time,
+                "start_time": c.get("start_time", ""),
+                "stop_time": c.get("stop_time", ""),
+                "buying_type": c.get("buying_type", ""),
+                "bid_strategy": c.get("bid_strategy", ""),
+                "budget_remaining": c.get("budget_remaining", ""),
+                "performance": perf,
+                "_account_name": c.get("_account_name", ""),
+                "_account_id": c.get("_account_id", ""),
+                "_currency": currency,
+            }))
+
+            # Pause/Activate button depends on current status
+            if status == "ACTIVE":
+                toggle_btn = ui.tags.button(
+                    "Pause",
+                    class_="btn-pause",
+                    onclick=f"Shiny.setInputValue('pause_campaign', '{campaign_id}', {{priority: 'event'}});",
+                )
+            elif status == "PAUSED":
+                toggle_btn = ui.tags.button(
+                    "Activate",
+                    class_="btn-activate",
+                    onclick=f"Shiny.setInputValue('activate_campaign', '{campaign_id}', {{priority: 'event'}});",
+                )
+            else:
+                toggle_btn = ui.span()
+
+            action_cell = ui.div(
+                ui.tags.button(
+                    "View",
+                    class_="btn-view",
+                    onclick=f"Shiny.setInputValue('view_campaign', {c_json}, {{priority: 'event'}});",
+                ),
+                toggle_btn,
+                ui.tags.button(
+                    "Budget",
+                    class_="btn-edit",
+                    onclick=f"Shiny.setInputValue('edit_budget_campaign', {c_json}, {{priority: 'event'}});",
+                ),
+                ui.tags.button(
+                    "Delete",
+                    class_="btn-delete",
+                    onclick=f"Shiny.setInputValue('delete_campaign', '{campaign_id}', {{priority: 'event'}});",
+                ),
+                class_="campaign-actions",
+            )
+
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(
+                        ui.div(name, style="font-weight: 600; margin-bottom: 2px;"),
+                        ui.div(campaign_id, style="font-size: 12px; color: #475569; font-family: monospace;"),
+                    ),
+                    ui.tags.td(ui.span(badge_label, class_=badge_class)),
+                    ui.tags.td(ui.span(obj_display, class_="badge-objective")),
+                    ui.tags.td(budget_display),
+                    ui.tags.td(created_display),
+                    ui.tags.td(
+                        ui.div(f"Spend: {spend_display}", style="font-size: 14px;"),
+                        ui.div(f"Clicks: {clicks_display} | Impr: {impressions_display}", style="font-size: 12px; color: #64748b;"),
+                        ui.div(f"CTR: {ctr_display}", style="font-size: 12px; color: #64748b;"),
+                    ),
+                    ui.tags.td(action_cell),
+                )
+            )
+
+        return ui.tags.table(
+            ui.tags.thead(ui.tags.tr(
+                ui.tags.th("Campaign"),
+                ui.tags.th("Status"),
+                ui.tags.th("Objective"),
+                ui.tags.th("Budget"),
+                ui.tags.th("Created"),
+                ui.tags.th("Performance (7d)"),
+                ui.tags.th("Actions"),
+            )),
+            ui.tags.tbody(*rows),
+        )
+
+    # ---- Campaign detail modal ----
+
+    @reactive.effect
+    @reactive.event(input.view_campaign)
+    async def _show_campaign_modal():
+        """Show detail modal when View is clicked."""
+        raw = input.view_campaign()
+        if not raw:
+            return
+        try:
+            c = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        campaign_id = c.get("id", "Unknown")
+        name = c.get("name", "Untitled")
+        status = c.get("status", "UNKNOWN").upper()
+        objective = c.get("objective", "—")
+        currency = c.get("_currency", "USD")
+        daily_budget = c.get("daily_budget")
+        lifetime_budget = c.get("lifetime_budget")
+        budget_remaining = c.get("budget_remaining", "")
+        created_time = c.get("created_time", "")[:10] if c.get("created_time") else "—"
+        start_time = c.get("start_time", "")[:10] if c.get("start_time") else "—"
+        stop_time = c.get("stop_time", "")[:10] if c.get("stop_time") else "—"
+        buying_type = c.get("buying_type", "—") or "—"
+        bid_strategy = c.get("bid_strategy", "—") or "—"
+        account_name = c.get("_account_name", "—")
+        account_id = c.get("_account_id", "—")
+        perf = c.get("performance")
+
+        # Status badge
+        if status == "ACTIVE":
+            badge_class, badge_label = "badge-active", "Active"
+        elif status == "PAUSED":
+            badge_class, badge_label = "badge-paused", "Paused"
+        elif status == "DELETED":
+            badge_class, badge_label = "badge-deleted", "Deleted"
+        else:
+            badge_class, badge_label = "badge-archived", status.title()
+
+        obj_display = objective.replace("OUTCOME_", "").replace("_", " ").title() if objective != "—" else "—"
+
+        if daily_budget and int(daily_budget) > 0:
+            budget_display = f"{fmt_budget(int(daily_budget), currency)}/day"
+        elif lifetime_budget and int(lifetime_budget) > 0:
+            budget_display = f"{fmt_budget(int(lifetime_budget), currency)} lifetime"
+        else:
+            budget_display = "—"
+
+        budget_remaining_display = fmt_budget(int(budget_remaining), currency) if budget_remaining and int(budget_remaining) > 0 else "—"
+
+        # Performance section
+        if perf:
+            perf_section = ui.div(
+                ui.tags.h4("Performance (Last 7 Days)", style="color: #94a3b8; font-size: 16px; margin-top: 20px; margin-bottom: 12px;"),
+                ui.div(
+                    ui.div(ui.tags.label("Spend"), ui.span(fmt_currency(perf.get("spend", 0), currency)), class_="detail-item"),
+                    ui.div(ui.tags.label("Impressions"), ui.span(fmt_number(perf.get("impressions", 0))), class_="detail-item"),
+                    ui.div(ui.tags.label("Clicks"), ui.span(fmt_number(perf.get("clicks", 0))), class_="detail-item"),
+                    ui.div(ui.tags.label("CPC"), ui.span(fmt_currency(perf.get("cpc", 0), currency)), class_="detail-item"),
+                    ui.div(ui.tags.label("CTR"), ui.span(f"{perf.get('ctr', 0):.2f}%"), class_="detail-item"),
+                    ui.div(ui.tags.label("Reach"), ui.span(fmt_number(perf.get("reach", 0))), class_="detail-item"),
+                    class_="detail-grid-3",
+                ),
+            )
+        else:
+            perf_section = ui.div(
+                ui.tags.h4("Performance (Last 7 Days)", style="color: #94a3b8; font-size: 16px; margin-top: 20px; margin-bottom: 12px;"),
+                ui.div("No performance data available for this period.", style="color: #475569; font-size: 15px;"),
+            )
+
+        modal = ui.modal(
+            # Campaign details grid
+            ui.div(
+                ui.div(ui.tags.label("Campaign ID"), ui.span(campaign_id, style="font-family: monospace; font-size: 14px;"), class_="detail-item"),
+                ui.div(ui.tags.label("Status"), ui.span(badge_label, class_=badge_class), class_="detail-item"),
+                ui.div(ui.tags.label("Objective"), ui.span(obj_display, class_="badge-objective"), class_="detail-item"),
+                ui.div(ui.tags.label("Budget"), ui.span(budget_display), class_="detail-item"),
+                ui.div(ui.tags.label("Budget Remaining"), ui.span(budget_remaining_display), class_="detail-item"),
+                ui.div(ui.tags.label("Buying Type"), ui.span(buying_type.title()), class_="detail-item"),
+                ui.div(ui.tags.label("Bid Strategy"), ui.span(bid_strategy.replace("_", " ").title() if bid_strategy != "—" else "—"), class_="detail-item"),
+                ui.div(ui.tags.label("Created"), ui.span(created_time), class_="detail-item"),
+                ui.div(ui.tags.label("Start Date"), ui.span(start_time), class_="detail-item"),
+                ui.div(ui.tags.label("End Date"), ui.span(stop_time), class_="detail-item"),
+                ui.div(ui.tags.label("Account"), ui.span(account_name), class_="detail-item"),
+                ui.div(ui.tags.label("Account ID"), ui.span(account_id, style="font-family: monospace; font-size: 14px;"), class_="detail-item"),
+                class_="detail-grid",
+            ),
+
+            perf_section,
+
+            title=name,
+            size="l",
+            easy_close=True,
+        )
+        ui.modal_show(modal)
+
+    # ---- Pause campaign ----
+
+    @reactive.effect
+    @reactive.event(input.pause_campaign)
+    async def _pause_campaign():
+        campaign_id = input.pause_campaign()
+        if not campaign_id:
+            return
+        try:
+            from services.marketing import marketing_service
+            result = await marketing_service._fb_client.update_campaign(campaign_id, status="PAUSED")
+            ui.notification_show(
+                f"Campaign {campaign_id} paused successfully. Click Refresh to update the table.",
+                type="message", duration=5,
+            )
+        except Exception as e:
+            ui.notification_show(f"Failed to pause campaign: {e}", type="error", duration=6)
+
+    # ---- Activate campaign ----
+
+    @reactive.effect
+    @reactive.event(input.activate_campaign)
+    async def _activate_campaign():
+        campaign_id = input.activate_campaign()
+        if not campaign_id:
+            return
+        try:
+            from services.marketing import marketing_service
+            result = await marketing_service._fb_client.update_campaign(campaign_id, status="ACTIVE")
+            ui.notification_show(
+                f"Campaign {campaign_id} activated successfully. Click Refresh to update the table.",
+                type="message", duration=5,
+            )
+        except Exception as e:
+            ui.notification_show(f"Failed to activate campaign: {e}", type="error", duration=6)
+
+    # ---- Delete campaign ----
+
+    @reactive.effect
+    @reactive.event(input.delete_campaign)
+    async def _delete_campaign():
+        campaign_id = input.delete_campaign()
+        if not campaign_id:
+            return
+        try:
+            from services.marketing import marketing_service
+            result = await marketing_service._fb_client.delete_campaign(campaign_id)
+            ui.notification_show(
+                f"Campaign {campaign_id} deleted (archived). Click Refresh to update the table.",
+                type="warning", duration=5,
+            )
+        except Exception as e:
+            ui.notification_show(f"Failed to delete campaign: {e}", type="error", duration=6)
+
+    # ---- Edit budget modal ----
+
+    @reactive.effect
+    @reactive.event(input.edit_budget_campaign)
+    async def _show_edit_budget_modal():
+        raw = input.edit_budget_campaign()
+        if not raw:
+            return
+        try:
+            c = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        campaign_id = c.get("id", "")
+        name = c.get("name", "")
+        currency = c.get("_currency", "USD")
+        daily_budget = c.get("daily_budget")
+        current_budget_display = fmt_budget(int(daily_budget), currency) if daily_budget and int(daily_budget) > 0 else "Not set"
+        current_budget_value = str(int(daily_budget) // 100) if daily_budget and int(daily_budget) > 0 else ""
+
+        sym = CURRENCY_SYMBOLS.get(currency, currency)
+
+        modal = ui.modal(
+            ui.div(
+                ui.div(f"Current daily budget: {current_budget_display}", style="color: #94a3b8; font-size: 16px; margin-bottom: 16px;"),
+                ui.div(
+                    ui.input_text(
+                        "new_budget_value",
+                        f"New Daily Budget ({sym})",
+                        value=current_budget_value,
+                        placeholder=f"e.g., 500 ({sym}500.00/day)",
+                        width="100%",
+                    ),
+                    ui.div(
+                        f"Enter the amount in whole {currency} (e.g., 500 = {sym}500.00/day). "
+                        f"The value will be converted to cents for the API.",
+                        style="font-size: 14px; color: #475569; margin-top: 6px;",
+                    ),
+                    style="margin-bottom: 20px;",
+                ),
+                # Hidden input to pass campaign_id
+                ui.tags.script(f"document.getElementById('budget_campaign_id_store').value = '{campaign_id}';"),
+                ui.tags.input(type="hidden", id="budget_campaign_id_store", value=campaign_id),
+                ui.div(
+                    ui.input_action_button(
+                        "submit_budget",
+                        f"Update Budget for {name[:40]}",
+                        class_="action-btn action-btn-primary",
+                        style="width: 100%; padding: 12px;",
+                    ),
+                ),
+            ),
+            title=f"Edit Budget — {name}",
+            size="m",
+            easy_close=True,
+        )
+        ui.modal_show(modal)
+
+    @reactive.effect
+    @reactive.event(input.submit_budget)
+    async def _handle_budget_update():
+        new_value = input.new_budget_value()
+        if not new_value:
+            ui.notification_show("Please enter a budget value.", type="error", duration=4)
+            return
+
+        try:
+            budget_whole = int(float(new_value))
+            budget_cents = budget_whole * 100
+        except (ValueError, TypeError):
+            ui.notification_show("Invalid budget value. Please enter a number.", type="error", duration=4)
+            return
+
+        # Get campaign_id from the last edit_budget_campaign event
+        raw = input.edit_budget_campaign()
+        if not raw:
+            ui.notification_show("Campaign not found.", type="error", duration=4)
+            return
+        try:
+            c = json.loads(raw)
+            campaign_id = c.get("id", "")
+        except (json.JSONDecodeError, TypeError):
+            ui.notification_show("Campaign not found.", type="error", duration=4)
+            return
+
+        currency = c.get("_currency", "USD")
+        sym = CURRENCY_SYMBOLS.get(currency, currency)
+
+        try:
+            from services.marketing import marketing_service
+            result = await marketing_service._fb_client.update_campaign(campaign_id, daily_budget=budget_cents)
+            ui.notification_show(
+                f"Budget updated to {sym}{budget_whole:,}/day for campaign {c.get('name', campaign_id)}. Click Refresh to see changes.",
+                type="message", duration=5,
+            )
+            ui.modal_remove()
+        except Exception as e:
+            ui.notification_show(f"Failed to update budget: {e}", type="error", duration=6)
+
+    # ============================================
+    # Creatives tab reactives
+    # ============================================
 
     @reactive.calc
     async def all_creatives_data():
@@ -472,7 +1062,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             total = data.get("total_creatives", 0)
             accounts_count = data.get("accounts_with_creatives", 0)
             total_accounts = data.get("total_accounts", 0)
-            # Count by type
             type_counts = {"video": 0, "image": 0, "carousel": 0, "unknown": 0}
             for acc in data.get("accounts", []):
                 for c in acc.get("creatives", []):
@@ -563,24 +1152,18 @@ def server(input: Inputs, output: Outputs, session: Session):
             status = c.get("status", "UNKNOWN").upper()
             thumb_url = c.get("preview_url") or c.get("thumbnail_url") or c.get("image_url") or ""
 
-            # Type badge class
             type_class = f"type-badge-{ctype}" if ctype in ("video", "image", "carousel") else "type-badge-unknown"
-
-            # Status badge
             status_class = "badge-active" if status == "ACTIVE" else ("badge-paused" if status == "PAUSED" else "badge-archived")
             status_label = "Active" if status == "ACTIVE" else ("Paused" if status == "PAUSED" else status.title())
 
-            # Thumbnail
             if thumb_url:
                 thumb = ui.tags.img(src=thumb_url, class_="creative-thumb", alt=name)
             else:
-                icon = "🎬" if ctype == "video" else ("🖼" if ctype == "image" else ("📑" if ctype == "carousel" else "📄"))
+                icon = "\U0001f3ac" if ctype == "video" else ("\U0001f5bc" if ctype == "image" else ("\U0001f4d1" if ctype == "carousel" else "\U0001f4c4"))
                 thumb = ui.div(icon, class_="creative-thumb-placeholder")
 
-            # Short hash for display
             short_id = creative_id[-8:] if len(creative_id) > 8 else creative_id
 
-            # Build the card as a button that triggers the modal
             card = ui.div(
                 thumb,
                 ui.div(
@@ -594,7 +1177,6 @@ def server(input: Inputs, output: Outputs, session: Session):
                     class_="creative-info",
                 ),
                 class_="creative-card",
-                # Use onclick to set the selected creative via JS → Shiny input
                 onclick=f"Shiny.setInputValue('clicked_creative', {json.dumps(json.dumps(c))}, {{priority: 'event'}});",
             )
             cards.append(card)
@@ -606,11 +1188,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.effect
     @reactive.event(input.clicked_creative)
     async def _show_creative_modal():
-        """Show detail modal when a creative card is clicked."""
         raw = input.clicked_creative()
         if not raw:
             return
-
         try:
             c = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -620,18 +1200,17 @@ def server(input: Inputs, output: Outputs, session: Session):
         name = c.get("name", "Untitled")
         ctype = c.get("type", "unknown")
         status = c.get("status", "UNKNOWN").upper()
-        title = c.get("title", "") or "—"
-        body = c.get("body", "") or "—"
-        image_url = c.get("image_url", "") or "—"
+        title = c.get("title", "") or "\u2014"
+        body = c.get("body", "") or "\u2014"
+        image_url = c.get("image_url", "") or "\u2014"
         thumb_url = c.get("preview_url") or c.get("thumbnail_url") or ""
-        account_name = c.get("_account_name", "—")
-        account_id = c.get("_account_id", "—")
+        account_name = c.get("_account_name", "\u2014")
+        account_id = c.get("_account_id", "\u2014")
 
         type_class = f"type-badge-{ctype}" if ctype in ("video", "image", "carousel") else "type-badge-unknown"
         status_class = "badge-active" if status == "ACTIVE" else ("badge-paused" if status == "PAUSED" else "badge-archived")
         status_label = "Active" if status == "ACTIVE" else ("Paused" if status == "PAUSED" else status.title())
 
-        # Preview image
         if thumb_url:
             preview = ui.tags.img(
                 src=thumb_url,
@@ -645,8 +1224,6 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         modal = ui.modal(
             preview,
-
-            # Detail grid
             ui.div(
                 ui.div(ui.tags.label("Creative ID"), ui.span(creative_id, style="font-family: monospace; font-size: 12px;"), class_="detail-item"),
                 ui.div(ui.tags.label("Type"), ui.span(ctype.title(), class_=type_class), class_="detail-item"),
@@ -656,27 +1233,20 @@ def server(input: Inputs, output: Outputs, session: Session):
                 ui.div(ui.tags.label("Ad Title"), ui.span(title), class_="detail-item"),
                 class_="detail-grid",
             ),
-
-            # Body text (full width)
             ui.div(
                 ui.tags.label("Body Text", style="display: block; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 16px; margin-bottom: 4px;"),
                 ui.div(body, style="font-size: 13px; color: #cbd5e1; line-height: 1.6; padding: 12px; background: #0f1117; border-radius: 8px; max-height: 120px; overflow-y: auto;"),
             ),
-
-            # Image URL
             ui.div(
                 ui.tags.label("Image URL", style="display: block; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 12px; margin-bottom: 4px;"),
                 ui.div(image_url, style="font-size: 11px; color: #475569; font-family: monospace; word-break: break-all; padding: 8px; background: #0f1117; border-radius: 6px;"),
             ),
-
-            # Action buttons
             ui.div(
                 ui.tags.button("Create Ad from Creative", class_="action-btn action-btn-primary", onclick=f"alert('Create Ad flow for creative {creative_id} — coming soon');"),
                 ui.tags.button("Delete Creative", class_="action-btn action-btn-danger", onclick=f"alert('Delete creative {creative_id} — coming soon');"),
                 ui.tags.button("Copy ID", class_="action-btn action-btn-secondary", onclick=f"navigator.clipboard.writeText('{creative_id}'); alert('Creative ID copied to clipboard');"),
                 style="display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap;",
             ),
-
             title=name,
             size="l",
             easy_close=True,
@@ -688,8 +1258,6 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.effect
     @reactive.event(input.show_upload)
     async def _show_upload_modal():
-        """Show the upload modal for new creatives."""
-        # Get accounts for the dropdown
         data = await all_creatives_data()
         accounts = data.get("accounts", []) if data else []
 
@@ -698,47 +1266,33 @@ def server(input: Inputs, output: Outputs, session: Session):
             account_choices[acc.get("account_id", "")] = f"{acc.get('account_name', 'Unknown')} ({acc.get('account_id', '')})"
 
         modal = ui.modal(
-            # Account selector for upload target
             ui.div(
                 ui.input_select("upload_account", "Target Ad Account", choices=account_choices, width="100%"),
                 style="margin-bottom: 16px;",
             ),
-
-            # Creative name
             ui.div(
                 ui.input_text("upload_name", "Creative Name", placeholder="e.g., Summer Sale Banner v2", width="100%"),
                 style="margin-bottom: 16px;",
             ),
-
-            # Creative title
             ui.div(
                 ui.input_text("upload_title", "Ad Title", placeholder="e.g., 50% Off All Gummies", width="100%"),
                 style="margin-bottom: 16px;",
             ),
-
-            # Body text
             ui.div(
                 ui.input_text_area("upload_body", "Ad Body Text", placeholder="Write your ad copy here...", width="100%", rows=3),
                 style="margin-bottom: 16px;",
             ),
-
-            # File upload
             ui.div(
                 ui.input_file("upload_file", "Upload Image or Video", accept=[".jpg", ".jpeg", ".png", ".gif", ".mp4", ".mov"], multiple=False),
                 style="margin-bottom: 16px;",
             ),
-
-            # Link URL
             ui.div(
                 ui.input_text("upload_link", "Destination URL", placeholder="https://kayapure.com/product/...", width="100%"),
                 style="margin-bottom: 20px;",
             ),
-
-            # Submit button
             ui.div(
                 ui.input_action_button("submit_upload", "Upload Creative to Meta", class_="action-btn action-btn-primary", style="width: 100%; padding: 12px;"),
             ),
-
             title="Upload New Creative",
             size="l",
             easy_close=True,
@@ -748,7 +1302,6 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.effect
     @reactive.event(input.submit_upload)
     async def _handle_upload():
-        """Handle the creative upload submission."""
         account_id = input.upload_account()
         name = input.upload_name()
         title = input.upload_title()

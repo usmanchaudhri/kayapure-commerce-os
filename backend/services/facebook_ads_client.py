@@ -601,6 +601,224 @@ class FacebookAdsClient:
             "accounts": account_results,
         }
 
+    async def get_campaigns_detailed(
+        self,
+        account_id: Optional[str] = None,
+        fields: str = "id,name,status,objective,daily_budget,lifetime_budget,budget_remaining,start_time,stop_time,created_time,updated_time,buying_type,bid_strategy,special_ad_categories",
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch all campaigns for an ad account with detailed fields.
+
+        Args:
+            account_id: The ad account ID. Defaults to primary account.
+            fields: Comma-separated fields to retrieve.
+
+        Returns:
+            List of campaign dicts with full metadata.
+        """
+        target = account_id or self._account_id
+        path = f"{target}/campaigns"
+        params = {"fields": fields, "limit": "500"}
+        result = await self._request("GET", path, params=params)
+        campaigns = result.get("data", [])
+
+        # Handle pagination
+        while result.get("paging", {}).get("next"):
+            next_url = result["paging"]["next"]
+            client = await self._get_client()
+            response = await client.get(next_url)
+            if response.status_code == 200:
+                result = response.json()
+                campaigns.extend(result.get("data", []))
+            else:
+                break
+
+        logger.info(
+            f"Fetched {len(campaigns)} campaigns for {target}",
+            extra={"account_id": target, "campaign_count": len(campaigns)},
+        )
+        return campaigns
+
+    async def get_campaign_insights(
+        self,
+        campaign_id: str,
+        time_range: Optional[Dict[str, str]] = None,
+        fields: str = "spend,impressions,clicks,cpc,ctr,cpm,reach,frequency,actions,cost_per_action_type",
+    ) -> Dict[str, Any]:
+        """
+        Fetch performance insights for a specific campaign.
+
+        Returns:
+            Dict with campaign performance metrics.
+        """
+        path = f"{campaign_id}/insights"
+        params: Dict[str, Any] = {"fields": fields}
+        if time_range:
+            params["time_range"] = json.dumps(time_range)
+        return await self._request("GET", path, params=params)
+
+    async def update_campaign(
+        self,
+        campaign_id: str,
+        status: Optional[str] = None,
+        daily_budget: Optional[int] = None,
+        name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update a campaign's properties.
+
+        Args:
+            campaign_id: The campaign ID.
+            status: New status ('ACTIVE', 'PAUSED', 'ARCHIVED').
+            daily_budget: New daily budget in cents (e.g., 5000 = 50.00 in account currency).
+            name: New campaign name.
+
+        Returns:
+            Graph API response (typically {"success": true}).
+        """
+        data: Dict[str, Any] = {}
+        if status is not None:
+            data["status"] = status
+        if daily_budget is not None:
+            data["daily_budget"] = str(daily_budget)
+        if name is not None:
+            data["name"] = name
+
+        if not data:
+            raise FacebookAdsError("No update fields provided")
+
+        logger.info(
+            f"Updating campaign {campaign_id}: {data}",
+            extra={"campaign_id": campaign_id, "updates": data},
+        )
+        return await self._request("POST", campaign_id, data=data)
+
+    async def delete_campaign(self, campaign_id: str) -> Dict[str, Any]:
+        """
+        Delete (archive) a campaign. Facebook doesn't truly delete campaigns;
+        this sets the status to DELETED which effectively archives it.
+
+        Returns:
+            Graph API response.
+        """
+        logger.info(
+            f"Deleting (archiving) campaign {campaign_id}",
+            extra={"campaign_id": campaign_id},
+        )
+        return await self._request("POST", campaign_id, data={"status": "DELETED"})
+
+    async def get_all_campaigns(
+        self,
+        include_insights: bool = True,
+        days: int = 7,
+    ) -> Dict[str, Any]:
+        """
+        Fetch all campaigns across ALL ad accounts with optional performance insights.
+
+        Args:
+            include_insights: Whether to fetch spend/clicks/impressions for each campaign.
+            days: Number of days for the insights time range.
+
+        Returns:
+            Dict with total_campaigns count and per-account campaign lists.
+        """
+        from datetime import date as date_type, timedelta
+
+        accounts = await self.get_all_ad_accounts()
+        end_date = date_type.today()
+        start_date = end_date - timedelta(days=days)
+        time_range = {
+            "since": start_date.strftime("%Y-%m-%d"),
+            "until": end_date.strftime("%Y-%m-%d"),
+        }
+
+        async def fetch_account_campaigns(account: Dict) -> Dict[str, Any]:
+            account_id = account["id"]
+            account_name = account.get("name", "Unknown")
+            account_currency = account.get("currency", "USD")
+
+            try:
+                campaigns = await self.get_campaigns_detailed(account_id)
+
+                # Optionally fetch insights for each campaign in parallel
+                if include_insights and campaigns:
+                    async def enrich_campaign(c: Dict) -> Dict:
+                        try:
+                            insights = await self.get_campaign_insights(
+                                c["id"], time_range=time_range
+                            )
+                            rows = insights.get("data", [])
+                            if rows:
+                                perf = rows[0]
+                                c["performance"] = {
+                                    "spend": float(perf.get("spend", 0)),
+                                    "impressions": int(perf.get("impressions", 0)),
+                                    "clicks": int(perf.get("clicks", 0)),
+                                    "cpc": float(perf.get("cpc", 0)),
+                                    "ctr": float(perf.get("ctr", 0)),
+                                    "cpm": float(perf.get("cpm", 0)),
+                                    "reach": int(perf.get("reach", 0)),
+                                    "frequency": float(perf.get("frequency", 0)),
+                                }
+                            else:
+                                c["performance"] = None
+                        except Exception as e:
+                            logger.warning(f"Failed to get insights for campaign {c['id']}: {e}")
+                            c["performance"] = None
+                        return c
+
+                    campaigns = await asyncio.gather(
+                        *[enrich_campaign(c) for c in campaigns]
+                    )
+                else:
+                    for c in campaigns:
+                        c["performance"] = None
+
+                return {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "currency": account_currency,
+                    "campaign_count": len(campaigns),
+                    "campaigns": list(campaigns),
+                }
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch campaigns for {account_name} ({account_id}): {e}",
+                    extra={"account_id": account_id, "error": str(e)},
+                )
+                return {
+                    "account_id": account_id,
+                    "account_name": account_name,
+                    "currency": account_currency,
+                    "campaign_count": 0,
+                    "campaigns": [],
+                    "error": str(e),
+                }
+
+        account_results = await asyncio.gather(
+            *[fetch_account_campaigns(acc) for acc in accounts]
+        )
+
+        total_campaigns = sum(a["campaign_count"] for a in account_results)
+        accounts_with_campaigns = sum(1 for a in account_results if a["campaign_count"] > 0)
+
+        logger.info(
+            f"Fetched {total_campaigns} campaigns across {len(accounts)} accounts",
+            extra={
+                "total_campaigns": total_campaigns,
+                "account_count": len(accounts),
+                "insights_period": f"{start_date} to {end_date}" if include_insights else "none",
+            },
+        )
+
+        return {
+            "total_accounts": len(accounts),
+            "accounts_with_campaigns": accounts_with_campaigns,
+            "total_campaigns": total_campaigns,
+            "insights_period": time_range if include_insights else None,
+            "accounts": account_results,
+        }
+
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._http_client and not self._http_client.is_closed:
