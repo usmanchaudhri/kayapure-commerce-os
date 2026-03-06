@@ -1195,12 +1195,18 @@ def server(input: Inputs, output: Outputs, session: Session):
                 class_="loading-spinner",
             )
 
-        choices = {"": "— Select an ad account —"}
+        choices = {}
         for acc in accounts:
             label = f"{acc.get('name', 'Unknown')} ({acc.get('id', '')})"
             choices[acc.get("id", "")] = label
 
-        return ui.input_select("account_select", None, choices=choices, width="100%")
+        first_account_id = accounts[0].get("id", "")
+
+        return ui.input_select("account_select",
+                               None,
+                               choices=choices,
+                               selected=first_account_id,
+                               width="100%")
 
     @reactive.effect
     @reactive.event(input.account_select)
