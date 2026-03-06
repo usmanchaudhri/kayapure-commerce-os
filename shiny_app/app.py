@@ -227,6 +227,16 @@ app_ui = ui.page_fluid(
             background: #1e293b; color: #94a3b8; padding: 3px 10px; border-radius: 9999px;
             font-size: 13px; font-weight: 600; white-space: nowrap;
         }
+        /* Date range selector */
+        .date-range-bar {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+        }
+        .date-range-bar label { color: #94a3b8; font-size: 15px; font-weight: 600; white-space: nowrap; }
+        .date-range-bar select {
+            background: #0f1117; color: #e2e8f0; border: 1px solid #2d3348;
+            border-radius: 6px; padding: 8px 14px; font-size: 15px; min-width: 180px;
+        }
+        .date-range-bar select:focus { border-color: #22d3ee; outline: none; }
     """),
 
     # Header
@@ -266,9 +276,16 @@ app_ui = ui.page_fluid(
                 style="margin-bottom: 24px;",
             ),
 
-            # 7-Day View
+            # Date range selector + period info
             ui.div(
-                ui.tags.h3("Last 7 Days — Primary Account", style="color: #94a3b8; font-size: 15px; font-weight: 600; margin-bottom: 8px;"),
+                ui.tags.label("Date Range:", **{"for": "dashboard_date_range"}),
+                ui.input_select(
+                    "dashboard_date_range",
+                    label=None,
+                    choices={"7": "Last 7 Days", "30": "Last 30 Days", "last_month": "Last Month"},
+                    selected="7",
+                ),
+                class_="date-range-bar",
             ),
             ui.output_ui("period_info"),
 
@@ -382,7 +399,31 @@ def server(input: Inputs, output: Outputs, session: Session):
     async def ad_data():
         input.refresh()
         from services.marketing import marketing_service
-        data = await marketing_service.get_ad_spend_history(days=7)
+        from datetime import datetime, timedelta
+
+        range_val = input.dashboard_date_range()
+
+        if range_val == "last_month":
+            # Calculate last calendar month
+            today = datetime.utcnow()
+            first_of_this_month = today.replace(day=1)
+            last_day_prev_month = first_of_this_month - timedelta(days=1)
+            first_of_prev_month = last_day_prev_month.replace(day=1)
+            days = (last_day_prev_month - first_of_prev_month).days + 1
+            # Use the marketing service with the calculated days,
+            # but we need to pass custom date range
+            data = await marketing_service.get_ad_spend_history(days=days)
+            # Override period info to show the actual last month dates
+            data["period"] = {
+                "start": first_of_prev_month.strftime("%Y-%m-%d"),
+                "end": last_day_prev_month.strftime("%Y-%m-%d"),
+                "days": days,
+                "label": last_day_prev_month.strftime("%B %Y"),
+            }
+        else:
+            days = int(range_val)
+            data = await marketing_service.get_ad_spend_history(days=days)
+
         return data
 
     @reactive.calc
@@ -476,8 +517,12 @@ def server(input: Inputs, output: Outputs, session: Session):
         source = data.get("source", "unknown")
         currency = data.get("currency", "USD")
         source_label = "LIVE API" if source == "facebook_api" else "MOCK"
+        label = period.get("label", "")
+        period_text = f"Period: {period.get('start', '?')} → {period.get('end', '?')} ({period.get('days', '?')} days)"
+        if label:
+            period_text = f"{label} — {period_text}"
         return ui.div(
-            ui.span(f"Period: {period.get('start', '?')} → {period.get('end', '?')} ({period.get('days', '?')} days)", class_="period-info"),
+            ui.span(period_text, class_="period-info"),
             ui.span(" | "), ui.span(f"Currency: {currency}", class_="period-info"),
             ui.span(" | "), ui.span("Source: ", class_="period-info"), ui.span(source_label, class_="source-badge"),
             style="margin-bottom: 16px; display: flex; align-items: center; gap: 6px;",
