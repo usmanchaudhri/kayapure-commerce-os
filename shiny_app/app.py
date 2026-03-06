@@ -282,7 +282,7 @@ app_ui = ui.page_fluid(
                 ui.input_select(
                     "dashboard_date_range",
                     label=None,
-                    choices={"7": "Last 7 Days", "30": "Last 30 Days", "last_month": "Last Month"},
+                    choices={"7": "Last 7 Days", "30": "Last 30 Days", "last_month": "Last Month", "180": "Last 6 Months", "365": "Last 1 Year"},
                     selected="7",
                 ),
                 class_="date-range-bar",
