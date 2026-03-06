@@ -222,6 +222,11 @@ app_ui = ui.page_fluid(
         }
         .creative-card:hover .play-icon { transform: scale(1.1); }
         .play-icon svg { width: 24px; height: 24px; fill: white; margin-left: 3px; }
+        /* Duplicate count badge */
+        .dup-badge {
+            background: #1e293b; color: #94a3b8; padding: 3px 10px; border-radius: 9999px;
+            font-size: 13px; font-weight: 600; white-space: nowrap;
+        }
     """),
 
     # Header
@@ -1236,6 +1241,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 "account_name": acc_name,
                 "creatives": result.get("creatives", []),
                 "count": result.get("count", 0),
+                "count_before_dedup": result.get("count_before_dedup", result.get("count", 0)),
                 "has_next": result.get("has_next", False),
                 "has_prev": result.get("has_prev", False),
                 "next_cursor": result.get("next_cursor", ""),
@@ -1319,12 +1325,18 @@ def server(input: Inputs, output: Outputs, session: Session):
             filter_label = "Images"
 
         has_more = " (more available)" if cache.get("has_next") else ""
+        raw_count = cache.get("count_before_dedup", total)
+        dedup_note = f"Deduplicated from {raw_count}" if raw_count != total else ""
 
         kpi_items = [
             ui.div(
-                ui.div("Total Creatives Loaded", class_="kpi-label"),
+                ui.div("Unique Creatives", class_="kpi-label"),
                 ui.div(fmt_number(total), class_="kpi-value"),
-                ui.div(f"{cache.get('account_name', 'Unknown')}{has_more}", class_="kpi-sub"),
+                ui.div(
+                    f"{cache.get('account_name', 'Unknown')}{has_more}"
+                    + (f" · {dedup_note}" if dedup_note else ""),
+                    class_="kpi-sub",
+                ),
                 class_="kpi-card", style="flex: 1; min-width: 160px;",
             ),
             ui.div(
@@ -1453,6 +1465,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                     ui.div(
                         ui.span(ctype.title(), class_=type_class),
                         ui.span(status_label, class_=status_class),
+                        *([ui.span(f"Used in {dup_count} ads", class_="dup-badge")] if (dup_count := c.get("_duplicate_count", 1)) > 1 else []),
                         class_="creative-meta",
                     ),
                     class_="creative-info",

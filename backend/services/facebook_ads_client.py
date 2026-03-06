@@ -530,14 +530,52 @@ class FacebookAdsClient:
                 "preview_url": preview_url,
             })
 
+        # ----------------------------------------------------------
+        # Deduplicate: by image_url for images/carousels,
+        #              by preview_url (video thumbnail) for videos.
+        # Keep the first occurrence (most recent creative ID) and
+        # track how many duplicates were collapsed.
+        # ----------------------------------------------------------
+        seen_keys: dict[str, int] = {}  # dedup_key -> index in deduped list
+        deduped: list[dict] = []
+
+        for c in normalized:
+            ctype = c.get("type", "unknown")
+            if ctype == "video":
+                dedup_key = c.get("preview_url") or c.get("thumbnail_url") or ""
+            else:
+                dedup_key = c.get("image_url") or c.get("preview_url") or ""
+
+            # If no usable key, keep the creative as-is (can't deduplicate)
+            if not dedup_key:
+                c["_duplicate_count"] = 1
+                deduped.append(c)
+                continue
+
+            if dedup_key in seen_keys:
+                # Increment the duplicate counter on the first occurrence
+                idx = seen_keys[dedup_key]
+                deduped[idx]["_duplicate_count"] = deduped[idx].get("_duplicate_count", 1) + 1
+            else:
+                c["_duplicate_count"] = 1
+                seen_keys[dedup_key] = len(deduped)
+                deduped.append(c)
+
         logger.info(
-            f"Fetched {len(normalized)} creatives for {account_id} (page, has_next={has_next})",
-            extra={"account_id": account_id, "creative_count": len(normalized), "has_next": has_next},
+            f"Fetched {len(normalized)} creatives for {account_id} "
+            f"(page, has_next={has_next}), deduplicated to {len(deduped)}",
+            extra={
+                "account_id": account_id,
+                "creative_count_raw": len(normalized),
+                "creative_count_deduped": len(deduped),
+                "has_next": has_next,
+            },
         )
 
         return {
-            "creatives": normalized,
-            "count": len(normalized),
+            "creatives": deduped,
+            "count": len(deduped),
+            "count_before_dedup": len(normalized),
             "has_next": has_next,
             "has_prev": has_prev,
             "next_cursor": next_cursor,
