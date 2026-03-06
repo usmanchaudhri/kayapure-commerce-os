@@ -189,6 +189,39 @@ app_ui = ui.page_fluid(
         .btn-delete:hover { background: #991b1b; }
         /* Objective badge */
         .badge-objective { background: #1e293b; color: #94a3b8; padding: 3px 10px; border-radius: 9999px; font-size: 13px; font-weight: 600; }
+        /* Media type toggle */
+        .media-toggle {
+            display: flex; border: 1px solid #2d3348; border-radius: 8px; overflow: hidden;
+        }
+        .media-toggle-btn {
+            padding: 8px 20px; font-size: 15px; font-weight: 600; cursor: pointer;
+            border: none; background: transparent; color: #64748b;
+            transition: all 0.2s ease; display: flex; align-items: center; gap: 6px;
+        }
+        .media-toggle-btn:hover { color: #e2e8f0; background: #1e2235; }
+        .media-toggle-btn.active-images {
+            background: #1a3a2a; color: #6ee7b7; box-shadow: inset 0 0 0 1px #6ee7b7;
+        }
+        .media-toggle-btn.active-videos {
+            background: #1e3a5f; color: #7dd3fc; box-shadow: inset 0 0 0 1px #7dd3fc;
+        }
+        /* Video play overlay */
+        .thumb-wrapper { position: relative; width: 100%; height: 200px; }
+        .thumb-wrapper img, .thumb-wrapper .creative-thumb-placeholder { width: 100%; height: 100%; }
+        .play-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.35); transition: background 0.2s;
+        }
+        .creative-card:hover .play-overlay { background: rgba(0, 0, 0, 0.2); }
+        .play-icon {
+            width: 56px; height: 56px; background: rgba(0, 0, 0, 0.6);
+            border: 3px solid rgba(255, 255, 255, 0.9); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            transition: transform 0.2s;
+        }
+        .creative-card:hover .play-icon { transform: scale(1.1); }
+        .play-icon svg { width: 24px; height: 24px; fill: white; margin-left: 3px; }
     """),
 
     # Header
@@ -304,6 +337,12 @@ app_ui = ui.page_fluid(
                     style="display: flex; align-items: center;",
                 ),
                 class_="toolbar",
+            ),
+
+            # Media type toggle (Images / Videos)
+            ui.div(
+                ui.output_ui("media_type_toggle"),
+                style="margin-bottom: 16px;",
             ),
 
             # KPI summary row
@@ -1084,6 +1123,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     creative_cursor = reactive.Value("")
     creative_cache = reactive.Value(None)  # {account_id, creatives, has_next, next_cursor, has_prev, prev_cursor}
     creative_loading = reactive.Value(False)
+    media_type_filter = reactive.Value("images")  # "images" or "videos"
 
     @reactive.calc
     async def accounts_list():
@@ -1094,6 +1134,50 @@ def server(input: Inputs, output: Outputs, session: Session):
             return None
         accounts = await marketing_service._fb_client.get_all_ad_accounts()
         return accounts
+
+    @render.ui
+    def media_type_toggle():
+        """Render the Images / Videos toggle buttons."""
+        selected = ""
+        try:
+            selected = input.account_select()
+        except Exception:
+            pass
+        if not selected:
+            return ui.div()  # Don't show toggle until an account is selected
+
+        current = media_type_filter.get()
+        img_cls = "media-toggle-btn active-images" if current == "images" else "media-toggle-btn"
+        vid_cls = "media-toggle-btn active-videos" if current == "videos" else "media-toggle-btn"
+
+        # SVG icons for the toggle
+        img_icon = ui.HTML('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>')
+        vid_icon = ui.HTML('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>')
+
+        return ui.div(
+            ui.div(
+                ui.tags.button(
+                    img_icon, " Images",
+                    class_=img_cls,
+                    onclick="Shiny.setInputValue('set_media_type', 'images', {priority: 'event'});",
+                ),
+                ui.tags.button(
+                    vid_icon, " Videos",
+                    class_=vid_cls,
+                    onclick="Shiny.setInputValue('set_media_type', 'videos', {priority: 'event'});",
+                ),
+                class_="media-toggle",
+            ),
+            style="display: flex; align-items: center; gap: 16px;",
+        )
+
+    @reactive.effect
+    @reactive.event(input.set_media_type)
+    def _on_media_type_change():
+        """Update the media type filter when toggle is clicked."""
+        val = input.set_media_type()
+        if val in ("images", "videos"):
+            media_type_filter.set(val)
 
     @render.ui
     async def account_selector():
@@ -1225,13 +1309,28 @@ def server(input: Inputs, output: Outputs, session: Session):
             ctype = c.get("type", "unknown")
             type_counts[ctype] = type_counts.get(ctype, 0) + 1
 
+        # Count by current filter
+        current_filter = media_type_filter.get()
+        if current_filter == "videos":
+            filtered_count = type_counts.get("video", 0)
+            filter_label = "Videos"
+        else:
+            filtered_count = type_counts.get("image", 0) + type_counts.get("carousel", 0)
+            filter_label = "Images"
+
         has_more = " (more available)" if cache.get("has_next") else ""
 
         kpi_items = [
             ui.div(
-                ui.div("Creatives Loaded", class_="kpi-label"),
+                ui.div("Total Creatives Loaded", class_="kpi-label"),
                 ui.div(fmt_number(total), class_="kpi-value"),
                 ui.div(f"{cache.get('account_name', 'Unknown')}{has_more}", class_="kpi-sub"),
+                class_="kpi-card", style="flex: 1; min-width: 160px;",
+            ),
+            ui.div(
+                ui.div(f"Showing ({filter_label})", class_="kpi-label"),
+                ui.div(fmt_number(filtered_count), class_="kpi-value",
+                       style=f"color: {'#7dd3fc' if current_filter == 'videos' else '#6ee7b7'};"),
                 class_="kpi-card", style="flex: 1; min-width: 160px;",
             ),
             ui.div(
@@ -1293,9 +1392,27 @@ def server(input: Inputs, output: Outputs, session: Session):
         if not creatives:
             return ui.div("No creatives found for this account.", style="color: #64748b; text-align: center; padding: 40px;")
 
+        # Filter by media type toggle
+        current_filter = media_type_filter.get()
+        if current_filter == "videos":
+            filtered = [c for c in creatives if c.get("type") == "video"]
+        else:
+            # "images" includes image, carousel, and unknown (non-video)
+            filtered = [c for c in creatives if c.get("type") != "video"]
+
+        if not filtered:
+            label = "videos" if current_filter == "videos" else "images"
+            return ui.div(
+                f"No {label} found in this batch. Try loading the next page.",
+                style="color: #64748b; text-align: center; padding: 40px; font-size: 17px;",
+            )
+
+        # SVG play triangle for video overlays
+        play_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>'
+
         # Build grid cards
         cards = []
-        for c in creatives:
+        for c in filtered:
             creative_id = c.get("creative_id", "")
             name = c.get("name", "Untitled")
             ctype = c.get("type", "unknown")
@@ -1306,11 +1423,25 @@ def server(input: Inputs, output: Outputs, session: Session):
             status_class = "badge-active" if status == "ACTIVE" else ("badge-paused" if status == "PAUSED" else "badge-archived")
             status_label = "Active" if status == "ACTIVE" else ("Paused" if status == "PAUSED" else status.title())
 
+            # Build thumbnail with optional play overlay for videos
             if thumb_url:
-                thumb = ui.tags.img(src=thumb_url, class_="creative-thumb", alt=name)
+                thumb_img = ui.tags.img(src=thumb_url, class_="creative-thumb", alt=name)
             else:
                 icon = "\U0001f3ac" if ctype == "video" else ("\U0001f5bc" if ctype == "image" else ("\U0001f4d1" if ctype == "carousel" else "\U0001f4c4"))
-                thumb = ui.div(icon, class_="creative-thumb-placeholder")
+                thumb_img = ui.div(icon, class_="creative-thumb-placeholder")
+
+            if ctype == "video":
+                # Wrap in thumb-wrapper with play overlay
+                thumb = ui.div(
+                    thumb_img,
+                    ui.div(
+                        ui.div(ui.HTML(play_svg), class_="play-icon"),
+                        class_="play-overlay",
+                    ),
+                    class_="thumb-wrapper",
+                )
+            else:
+                thumb = ui.div(thumb_img, class_="thumb-wrapper")
 
             short_id = creative_id[-8:] if len(creative_id) > 8 else creative_id
 
@@ -1331,9 +1462,11 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             cards.append(card)
 
-        count = len(creatives)
+        count = len(filtered)
+        total = len(creatives)
+        label = "videos" if current_filter == "videos" else "images"
         showing_text = ui.div(
-            f"Showing {count} creatives",
+            f"Showing {count} {label} (of {total} total creatives loaded)",
             style="color: #94a3b8; font-size: 15px; margin-bottom: 12px;",
         )
         return ui.div(showing_text, ui.div(*cards, class_="creative-grid"))
