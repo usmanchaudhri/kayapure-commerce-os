@@ -294,22 +294,23 @@ app_ui = ui.page_fluid(
                 style="margin-bottom: 24px;",
             ),
 
-            ui.layout_columns(
+            # Daily Ad Spend Trend — full width
+            ui.div(
                 ui.div(
-                    ui.div(
-                        ui.div("Daily Ad Spend Trend", class_="card-header"),
-                        ui.div(output_widget("spend_chart"), class_="card-body"),
-                        class_="card",
-                    ),
+                    ui.div("Daily Ad Spend Trend", class_="card-header"),
+                    ui.div(output_widget("spend_chart"), class_="card-body"),
+                    class_="card",
                 ),
+                style="margin-bottom: 24px;",
+            ),
+
+            # Campaign Insights — full width, below the chart
+            ui.div(
                 ui.div(
-                    ui.div(
-                        ui.div("Campaign Insights", class_="card-header"),
-                        ui.div(ui.output_ui("campaign_table"), class_="card-body"),
-                        class_="card",
-                    ),
+                    ui.div("Campaign Insights", class_="card-header"),
+                    ui.div(ui.output_ui("campaign_table"), class_="card-body"),
+                    class_="card",
                 ),
-                col_widths=[7, 5],
             ),
         ),
 
