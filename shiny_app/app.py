@@ -294,6 +294,69 @@ app_ui = ui.page_fluid(
             font-size: 13px; font-weight: 600; color: #64748b;
             text-transform: uppercase; letter-spacing: 0.5px;
         }
+        /* AI Report modal */
+        .ai-report-modal-loading {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 60px 20px; color: #64748b;
+        }
+        .ai-report-summary {
+            font-size: 16px; color: #cbd5e1; line-height: 1.7; padding: 16px 20px;
+            background: #161924; border: 1px solid #2d3348; border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .ai-report-section-title {
+            font-size: 15px; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 4px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .ai-report-finding {
+            padding: 10px 16px; background: #161924; border-left: 3px solid #22d3ee;
+            border-radius: 0 8px 8px 0; margin-bottom: 8px; font-size: 15px;
+            color: #e2e8f0; line-height: 1.5;
+        }
+        .ai-report-risk {
+            padding: 10px 16px; background: #1c1520; border-left: 3px solid #f87171;
+            border-radius: 0 8px 8px 0; margin-bottom: 8px; font-size: 15px;
+            color: #fca5a5; line-height: 1.5;
+        }
+        .ai-report-rec-card {
+            background: #161924; border: 1px solid #2d3348; border-radius: 10px;
+            padding: 16px 20px; margin-bottom: 12px;
+        }
+        .ai-report-rec-action {
+            font-size: 16px; font-weight: 700; color: #f1f5f9; margin-bottom: 6px;
+        }
+        .ai-report-rec-rationale {
+            font-size: 14px; color: #94a3b8; line-height: 1.5; margin-bottom: 8px;
+        }
+        .ai-report-rec-meta {
+            display: flex; gap: 12px; flex-wrap: wrap;
+        }
+        .ai-report-rec-badge {
+            padding: 3px 12px; border-radius: 9999px; font-size: 13px; font-weight: 600;
+        }
+        .ai-report-rec-badge.priority-high { background: #7f1d1d; color: #fca5a5; }
+        .ai-report-rec-badge.priority-medium { background: #78350f; color: #fcd34d; }
+        .ai-report-rec-badge.priority-low { background: #1a3a2a; color: #6ee7b7; }
+        .ai-report-rec-badge.impact { background: #1e3a5f; color: #7dd3fc; }
+        .ai-report-confidence {
+            display: flex; align-items: center; gap: 10px; margin-top: 16px;
+            padding: 12px 16px; background: #161924; border-radius: 8px;
+        }
+        .ai-report-confidence-bar {
+            flex: 1; height: 8px; background: #2d3348; border-radius: 4px; overflow: hidden;
+        }
+        .ai-report-confidence-fill {
+            height: 100%; border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .ai-report-confidence-label {
+            font-size: 14px; color: #94a3b8; font-weight: 600; white-space: nowrap;
+        }
+        .ai-report-error {
+            padding: 20px; background: #1c1520; border: 1px solid #7f1d1d; border-radius: 10px;
+            color: #fca5a5; font-size: 15px; text-align: center;
+        }
         /* Date range selector */
         .date-range-bar {
             display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
@@ -1921,6 +1984,118 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         return ui.div(*cards)
 
+    # ---- Helper: build formatted report modal content ----
+    def _build_report_modal_content(analysis: dict, acc_name: str) -> ui.Tag:
+        """Build a nicely formatted modal body from the AdsAnalysisResult dict."""
+        a = analysis.get("analysis", {})
+        summary = a.get("summary", "No summary available.")
+        findings = a.get("key_findings", [])
+        risks = a.get("risks", [])
+        recs = a.get("recommendations", [])
+        confidence = a.get("confidence", 0)
+
+        # Data snapshot info
+        snap = analysis.get("data_snapshot", {})
+        period = snap.get("period", {})
+        currency = snap.get("currency", "USD")
+        total_spend = snap.get("total_spend", 0)
+
+        sections = []
+
+        # Period + spend header
+        period_text = ""
+        if period:
+            period_text = f"{period.get('start', '?')} \u2192 {period.get('end', '?')}"
+        sections.append(
+            ui.div(
+                ui.div(
+                    ui.span(f"Period: {period_text}" if period_text else "Ad Account Analysis",
+                            style="color: #64748b; font-size: 14px;"),
+                    ui.span(f"  \u00b7  Total Spend: {fmt_currency(total_spend, currency)}" if total_spend else "",
+                            style="color: #64748b; font-size: 14px;"),
+                    style="margin-bottom: 16px;",
+                ),
+            )
+        )
+
+        # Summary
+        sections.append(
+            ui.div(
+                ui.div("\U0001f4cb Summary", class_="ai-report-section-title"),
+                ui.div(summary, class_="ai-report-summary"),
+            )
+        )
+
+        # Key Findings
+        if findings:
+            finding_items = [ui.div(f, class_="ai-report-finding") for f in findings]
+            sections.append(
+                ui.div(
+                    ui.div("\U0001f50d Key Findings", class_="ai-report-section-title"),
+                    *finding_items,
+                    style="margin-bottom: 20px;",
+                )
+            )
+
+        # Risks
+        if risks:
+            risk_items = [ui.div(r, class_="ai-report-risk") for r in risks]
+            sections.append(
+                ui.div(
+                    ui.div("\u26a0\ufe0f Risks", class_="ai-report-section-title"),
+                    *risk_items,
+                    style="margin-bottom: 20px;",
+                )
+            )
+
+        # Recommendations
+        if recs:
+            rec_cards = []
+            for i, rec in enumerate(recs, 1):
+                action = rec.get("action", "—")
+                rationale = rec.get("rationale", "")
+                impact = rec.get("expected_impact", "")
+                priority = rec.get("priority", "medium").lower()
+
+                priority_class = f"ai-report-rec-badge priority-{priority}" if priority in ("high", "medium", "low") else "ai-report-rec-badge priority-medium"
+
+                rec_cards.append(
+                    ui.div(
+                        ui.div(f"{i}. {action}", class_="ai-report-rec-action"),
+                        ui.div(rationale, class_="ai-report-rec-rationale") if rationale else ui.span(),
+                        ui.div(
+                            ui.span(priority.upper(), class_=priority_class),
+                            ui.span(impact, class_="ai-report-rec-badge impact") if impact else ui.span(),
+                            class_="ai-report-rec-meta",
+                        ),
+                        class_="ai-report-rec-card",
+                    )
+                )
+            sections.append(
+                ui.div(
+                    ui.div("\U0001f4a1 Recommendations", class_="ai-report-section-title"),
+                    *rec_cards,
+                    style="margin-bottom: 20px;",
+                )
+            )
+
+        # Confidence bar
+        conf_pct = int(confidence * 100)
+        conf_color = "#22c55e" if conf_pct >= 70 else ("#f59e0b" if conf_pct >= 40 else "#f87171")
+        sections.append(
+            ui.div(
+                ui.span("AI Confidence", class_="ai-report-confidence-label"),
+                ui.div(
+                    ui.div(style=f"width: {conf_pct}%; background: {conf_color};", class_="ai-report-confidence-fill"),
+                    class_="ai-report-confidence-bar",
+                ),
+                ui.span(f"{conf_pct}%", style=f"color: {conf_color}; font-weight: 700; font-size: 15px;"),
+                class_="ai-report-confidence",
+            )
+        )
+
+        return ui.div(*sections)
+
     # ---- AI Reports: Generate Report handler ----
     @reactive.effect
     @reactive.event(input.generate_report_click)
@@ -1933,15 +2108,57 @@ def server(input: Inputs, output: Outputs, session: Session):
         acc_name = parts[1] if len(parts) > 1 else "Unknown"
         acc_currency = parts[2] if len(parts) > 2 else "USD"
 
-        ui.notification_show(
-            f"Generating AI report for {acc_name} ({acc_id})... "
-            f"This feature will analyse your {acc_currency} ad spend data and provide "
-            f"actionable recommendations to improve ROI. Report generation is coming soon.",
-            type="message",
-            duration=8,
+        # Show loading modal immediately
+        loading_modal = ui.modal(
+            ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Analysing your ad account data with AI...", style="margin-top: 16px; font-size: 16px; color: #94a3b8;"),
+                ui.div("This may take 15\u201330 seconds.", style="margin-top: 6px; font-size: 14px; color: #475569;"),
+                class_="ai-report-modal-loading",
+            ),
+            title=f"Generating Report \u2014 {acc_name}",
+            size="l",
+            easy_close=False,
         )
+        ui.modal_show(loading_modal)
 
-    # ---- AI Reports: View Reports handler ----
+        try:
+            from services.ads_analysis_agent import ads_analysis_agent_service
+            result = await ads_analysis_agent_service.analyze(
+                days=30,
+                question=f"Analyse the ad performance for account {acc_name} ({acc_id}). "
+                         f"Find waste, winners, and optimization opportunities. "
+                         f"Provide specific, actionable recommendations.",
+            )
+
+            # Build formatted report
+            report_content = _build_report_modal_content(result, acc_name)
+
+            report_modal = ui.modal(
+                report_content,
+                title=f"AI Report \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(report_modal)
+
+        except Exception as e:
+            error_modal = ui.modal(
+                ui.div(
+                    f"Failed to generate report: {str(e)}",
+                    class_="ai-report-error",
+                ),
+                ui.div(
+                    "Please ensure the backend server has been restarted and the OpenAI API key is configured.",
+                    style="color: #475569; font-size: 14px; text-align: center; margin-top: 12px;",
+                ),
+                title=f"Report Error \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(error_modal)
+
+    # ---- AI Reports: View Reports handler (also calls analyze) ----
     @reactive.effect
     @reactive.event(input.view_reports_click)
     async def _handle_view_reports():
@@ -1952,22 +2169,55 @@ def server(input: Inputs, output: Outputs, session: Session):
         acc_id = parts[0] if len(parts) > 0 else ""
         acc_name = parts[1] if len(parts) > 1 else "Unknown"
 
-        modal = ui.modal(
+        # Show loading modal immediately
+        loading_modal = ui.modal(
             ui.div(
-                ui.div(
-                    "No reports generated yet for this account.",
-                    style="color: #64748b; font-size: 17px; text-align: center; padding: 40px 20px;",
-                ),
-                ui.div(
-                    'Click "Generate Report" to create your first AI-powered analysis.',
-                    style="color: #475569; font-size: 15px; text-align: center; margin-top: -20px;",
-                ),
+                ui.div(class_="spinner"),
+                ui.div("Fetching AI analysis for your ad account...", style="margin-top: 16px; font-size: 16px; color: #94a3b8;"),
+                ui.div("This may take 15\u201330 seconds.", style="margin-top: 6px; font-size: 14px; color: #475569;"),
+                class_="ai-report-modal-loading",
             ),
-            title=f"Reports — {acc_name}",
+            title=f"Loading Report \u2014 {acc_name}",
             size="l",
             easy_close=True,
         )
-        ui.modal_show(modal)
+        ui.modal_show(loading_modal)
+
+        try:
+            from services.ads_analysis_agent import ads_analysis_agent_service
+            result = await ads_analysis_agent_service.analyze(
+                days=30,
+                question=f"Provide a comprehensive performance report for account {acc_name} ({acc_id}). "
+                         f"Include spend efficiency, audience performance, creative fatigue signals, "
+                         f"and specific actions to improve ROAS.",
+            )
+
+            # Build formatted report
+            report_content = _build_report_modal_content(result, acc_name)
+
+            report_modal = ui.modal(
+                report_content,
+                title=f"AI Report \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(report_modal)
+
+        except Exception as e:
+            error_modal = ui.modal(
+                ui.div(
+                    f"Failed to load report: {str(e)}",
+                    class_="ai-report-error",
+                ),
+                ui.div(
+                    "Please ensure the backend server has been restarted and the OpenAI API key is configured.",
+                    style="color: #475569; font-size: 14px; text-align: center; margin-top: 12px;",
+                ),
+                title=f"Report Error \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(error_modal)
 
     # ---- AI Reports: Add Goals handler ----
     @reactive.effect
