@@ -44,6 +44,7 @@ from services.commerce import commerce_service
 from services.marketing import marketing_service
 from services.logistics import logistics_service
 from services.facebook_ads_client import FacebookAdsClient
+from services.ads_analysis_agent import ads_analysis_agent_service
 from graph.workflow import commerce_graph, firecracker_executor_node, CommerceState
 
 # ============================================
@@ -1069,6 +1070,9 @@ async def get_inventory():
         return source_disabled_response("logistics")
     return await logistics_service.get_inventory_status()
 
+@app.post("/api/marketing/analyze")
+async def analyze_ads(days: int=7, question: str = ""):
+    return await ads_analysis_agent_service.analyze(days=days, question=question)
 
 # ============================================
 # WebSocket Endpoint
