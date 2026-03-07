@@ -227,6 +227,73 @@ app_ui = ui.page_fluid(
             background: #1e293b; color: #94a3b8; padding: 3px 10px; border-radius: 9999px;
             font-size: 13px; font-weight: 600; white-space: nowrap;
         }
+        /* AI Reports tab */
+        .ai-reports-header {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 24px;
+        }
+        .ai-reports-header h3 { color: #f1f5f9; font-size: 22px; font-weight: 700; margin: 0; }
+        .ai-reports-header .subtitle { color: #64748b; font-size: 15px; }
+        .ai-report-account-card {
+            background: #1a1d27; border: 1px solid #2d3348; border-radius: 12px;
+            margin-bottom: 20px; overflow: hidden;
+        }
+        .ai-report-account-row {
+            display: flex; align-items: center; padding: 24px 28px; gap: 24px;
+        }
+        .ai-report-status-dot {
+            width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+        }
+        .ai-report-status-dot.active { background: #22c55e; }
+        .ai-report-status-dot.inactive { background: #64748b; }
+        .ai-report-account-info { flex: 1; min-width: 0; }
+        .ai-report-account-name { font-size: 20px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+        .ai-report-account-meta { font-size: 14px; color: #64748b; font-family: monospace; }
+        .ai-report-spend {
+            font-size: 26px; font-weight: 700; color: #f1f5f9; white-space: nowrap;
+            min-width: 160px; text-align: right;
+        }
+        .ai-report-actions { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
+        .btn-generate-report {
+            background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+            color: white; border: none; padding: 12px 24px; border-radius: 8px;
+            font-size: 16px; font-weight: 700; cursor: pointer;
+            display: flex; align-items: center; gap: 8px;
+            transition: all 0.2s; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+        .btn-generate-report:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4); }
+        .btn-view-reports {
+            background: transparent; color: #e2e8f0; border: 1px solid #475569;
+            padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s;
+        }
+        .btn-view-reports:hover { border-color: #94a3b8; background: #1e2235; }
+        .ai-report-goals-section {
+            border-top: 1px solid #2d3348; padding: 20px 28px;
+            background: rgba(30, 34, 53, 0.5);
+        }
+        .ai-report-goals-inner {
+            border: 1px solid #2d3348; border-radius: 10px; padding: 20px 24px;
+            background: #161924;
+        }
+        .ai-report-goals-title {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
+        }
+        .ai-report-goals-title span { font-size: 17px; font-weight: 600; color: #e2e8f0; }
+        .ai-report-goals-desc { font-size: 15px; color: #64748b; margin-bottom: 14px; }
+        .btn-add-goals {
+            background: transparent; color: #f59e0b; border: 1px solid #f59e0b;
+            padding: 8px 20px; border-radius: 20px; font-size: 15px; font-weight: 600;
+            cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;
+        }
+        .btn-add-goals:hover { background: rgba(245, 158, 11, 0.1); }
+        .ai-report-table-header {
+            display: flex; padding: 12px 28px; border-bottom: 1px solid #2d3348;
+            background: #161924; border-radius: 10px 10px 0 0;
+        }
+        .ai-report-col-header {
+            font-size: 13px; font-weight: 600; color: #64748b;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
         /* Date range selector */
         .date-range-bar {
             display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
@@ -380,6 +447,34 @@ app_ui = ui.page_fluid(
             ),
             ui.div(
                 ui.output_ui("creatives_pagination"),
+            ),
+        ),
+
+        # ---- Tab 4: AI Reports ----
+        ui.nav_panel(
+            "AI Reports",
+
+            # Header
+            ui.div(
+                ui.div(
+                    ui.tags.h3("AI-Powered Ad Reports"),
+                    ui.div("Generate intelligent reports to analyse and improve your ad spend across accounts.", class_="subtitle"),
+                    style="flex: 1;",
+                ),
+                class_="ai-reports-header",
+            ),
+
+            # Column headers row
+            ui.div(
+                ui.div("Account", class_="ai-report-col-header", style="flex: 2;"),
+                ui.div("Spend (30D)", class_="ai-report-col-header", style="flex: 1; text-align: right;"),
+                ui.div("Actions", class_="ai-report-col-header", style="flex: 1.5; text-align: right;"),
+                class_="ai-report-table-header",
+            ),
+
+            # Account cards list
+            ui.div(
+                ui.output_ui("ai_reports_accounts_list"),
             ),
         ),
     ),
@@ -1709,6 +1804,222 @@ def server(input: Inputs, output: Outputs, session: Session):
             duration=8,
         )
         ui.modal_remove()
+
+    # ============================================
+    # AI Reports tab reactives
+    # ============================================
+
+    @reactive.calc
+    async def ai_reports_accounts_data():
+        """Fetch all ad accounts with 30-day spend for the AI Reports tab."""
+        input.refresh()
+        from services.marketing import marketing_service
+        if not marketing_service._fb_client:
+            return None
+        from datetime import date as date_type, timedelta
+        until = date_type.today().strftime("%Y-%m-%d")
+        since = (date_type.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        data = await marketing_service._fb_client.get_total_spend_all_accounts(since=since, until=until)
+        return data
+
+    @render.ui
+    async def ai_reports_accounts_list():
+        """Render the list of ad account cards for the AI Reports tab."""
+        data = await ai_reports_accounts_data()
+
+        if data is None:
+            return ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Loading ad accounts...", class_="loading-text"),
+                class_="loading-spinner",
+            )
+
+        accounts = data.get("accounts", [])
+        if not accounts:
+            return ui.div(
+                "No ad accounts found. Ensure your Facebook access token is configured.",
+                style="color: #64748b; text-align: center; padding: 60px;",
+            )
+
+        # Sort: accounts with data first, then by spend descending
+        accounts.sort(key=lambda a: (-1 if a.get("has_data") else 0, -a.get("spend", 0)))
+
+        cards = []
+        for acc in accounts:
+            acc_id = acc.get("account_id", "")
+            acc_name = acc.get("account_name", "Unknown")
+            acc_currency = acc.get("currency", "USD")
+            acc_status = acc.get("status", "UNKNOWN")
+            acc_spend = acc.get("spend", 0)
+            is_active = acc_status == "ACTIVE"
+
+            # Status dot
+            dot_class = "ai-report-status-dot active" if is_active else "ai-report-status-dot inactive"
+
+            # Spend display
+            spend_display = fmt_currency(acc_spend, acc_currency)
+
+            # SVG icons
+            envelope_svg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4L12 13 2 4"/></svg>'
+            clock_svg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+            target_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
+            target_small_svg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
+
+            # Safe account ID for JS
+            safe_id = acc_id.replace("'", "\\'")
+            safe_name = acc_name.replace("'", "\\'")
+
+            card = ui.div(
+                # Main row: dot + info + spend + actions
+                ui.div(
+                    ui.div(class_=dot_class),
+                    ui.div(
+                        ui.div(acc_name, class_="ai-report-account-name"),
+                        ui.div(f"{acc_id}  ·  {acc_currency}", class_="ai-report-account-meta"),
+                        class_="ai-report-account-info",
+                    ),
+                    ui.div(spend_display, class_="ai-report-spend"),
+                    ui.div(
+                        ui.tags.button(
+                            ui.HTML(envelope_svg), " Generate Report",
+                            class_="btn-generate-report",
+                            onclick=f"Shiny.setInputValue('generate_report_click', '{safe_id}|{safe_name}|{acc_currency}', {{priority: 'event'}});",
+                        ),
+                        ui.tags.button(
+                            ui.HTML(clock_svg), " View Reports",
+                            class_="btn-view-reports",
+                            onclick=f"Shiny.setInputValue('view_reports_click', '{safe_id}|{safe_name}', {{priority: 'event'}});",
+                        ),
+                        class_="ai-report-actions",
+                    ),
+                    class_="ai-report-account-row",
+                ),
+                # Goals section
+                ui.div(
+                    ui.div(
+                        ui.div(
+                            ui.HTML(target_svg),
+                            ui.span("Set goals for this account"),
+                            class_="ai-report-goals-title",
+                        ),
+                        ui.div(
+                            "Define business targets so AI reports evaluate actual performance against your goals.",
+                            class_="ai-report-goals-desc",
+                        ),
+                        ui.tags.button(
+                            ui.HTML(target_small_svg), " Add Goals",
+                            class_="btn-add-goals",
+                            onclick=f"Shiny.setInputValue('add_goals_click', '{safe_id}|{safe_name}', {{priority: 'event'}});",
+                        ),
+                        class_="ai-report-goals-inner",
+                    ),
+                    class_="ai-report-goals-section",
+                ),
+                class_="ai-report-account-card",
+            )
+            cards.append(card)
+
+        return ui.div(*cards)
+
+    # ---- AI Reports: Generate Report handler ----
+    @reactive.effect
+    @reactive.event(input.generate_report_click)
+    async def _handle_generate_report():
+        val = input.generate_report_click()
+        if not val:
+            return
+        parts = val.split("|")
+        acc_id = parts[0] if len(parts) > 0 else ""
+        acc_name = parts[1] if len(parts) > 1 else "Unknown"
+        acc_currency = parts[2] if len(parts) > 2 else "USD"
+
+        ui.notification_show(
+            f"Generating AI report for {acc_name} ({acc_id})... "
+            f"This feature will analyse your {acc_currency} ad spend data and provide "
+            f"actionable recommendations to improve ROI. Report generation is coming soon.",
+            type="message",
+            duration=8,
+        )
+
+    # ---- AI Reports: View Reports handler ----
+    @reactive.effect
+    @reactive.event(input.view_reports_click)
+    async def _handle_view_reports():
+        val = input.view_reports_click()
+        if not val:
+            return
+        parts = val.split("|")
+        acc_id = parts[0] if len(parts) > 0 else ""
+        acc_name = parts[1] if len(parts) > 1 else "Unknown"
+
+        modal = ui.modal(
+            ui.div(
+                ui.div(
+                    "No reports generated yet for this account.",
+                    style="color: #64748b; font-size: 17px; text-align: center; padding: 40px 20px;",
+                ),
+                ui.div(
+                    'Click "Generate Report" to create your first AI-powered analysis.',
+                    style="color: #475569; font-size: 15px; text-align: center; margin-top: -20px;",
+                ),
+            ),
+            title=f"Reports — {acc_name}",
+            size="l",
+            easy_close=True,
+        )
+        ui.modal_show(modal)
+
+    # ---- AI Reports: Add Goals handler ----
+    @reactive.effect
+    @reactive.event(input.add_goals_click)
+    async def _handle_add_goals():
+        val = input.add_goals_click()
+        if not val:
+            return
+        parts = val.split("|")
+        acc_id = parts[0] if len(parts) > 0 else ""
+        acc_name = parts[1] if len(parts) > 1 else "Unknown"
+
+        modal = ui.modal(
+            ui.div(
+                ui.input_text("goal_monthly_spend", "Monthly Spend Target", placeholder="e.g., 50000", width="100%"),
+                style="margin-bottom: 16px;",
+            ),
+            ui.div(
+                ui.input_text("goal_target_cpc", "Target CPC", placeholder="e.g., 1.50", width="100%"),
+                style="margin-bottom: 16px;",
+            ),
+            ui.div(
+                ui.input_text("goal_target_ctr", "Target CTR (%)", placeholder="e.g., 3.5", width="100%"),
+                style="margin-bottom: 16px;",
+            ),
+            ui.div(
+                ui.input_text("goal_target_roas", "Target ROAS", placeholder="e.g., 4.0", width="100%"),
+                style="margin-bottom: 20px;",
+            ),
+            ui.div(
+                ui.tags.button(
+                    "Save Goals",
+                    class_="action-btn action-btn-primary",
+                    style="width: 100%; padding: 12px;",
+                    onclick=f"Shiny.setInputValue('save_goals_submit', '{acc_id}', {{priority: 'event'}}); bootstrap.Modal.getInstance(document.querySelector('.modal')).hide();",
+                ),
+            ),
+            title=f"Set Goals — {acc_name}",
+            size="m",
+            easy_close=True,
+        )
+        ui.modal_show(modal)
+
+    @reactive.effect
+    @reactive.event(input.save_goals_submit)
+    async def _handle_save_goals():
+        ui.notification_show(
+            "Goals saved! AI reports will evaluate performance against these targets. "
+            "Goal persistence is coming soon.",
+            type="message",
+            duration=6,
+        )
 
 
 # ============================================
