@@ -2345,7 +2345,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ),
             title=f"Generating Report \u2014 {acc_name}",
             size="l",
-            easy_close=False,
+            easy_close=True,
         )
         ui.modal_show(loading_modal)
 
@@ -2365,6 +2365,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 result, acc_name, acc_id=acc_id,
                 from_cache=False, report_type="generate",
             )
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             report_modal = ui.modal(
                 report_content,
                 title=f"AI Report \u2014 {acc_name}",
@@ -2374,6 +2375,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.modal_show(report_modal)
 
         except Exception as e:
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             error_modal = ui.modal(
                 ui.div(
                     f"Failed to generate report: {str(e)}",
@@ -2448,6 +2450,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 result, acc_name, acc_id=acc_id,
                 from_cache=False, report_type="view",
             )
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             report_modal = ui.modal(
                 report_content,
                 title=f"AI Report \u2014 {acc_name}",
@@ -2457,6 +2460,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.modal_show(report_modal)
 
         except Exception as e:
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             error_modal = ui.modal(
                 ui.div(
                     f"Failed to load report: {str(e)}",
@@ -2600,7 +2604,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ),
             title=f"Regenerating Report \u2014 {acc_name}",
             size="l",
-            easy_close=False,
+            easy_close=True,
         )
         ui.modal_show(loading_modal)
 
@@ -2628,6 +2632,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 result, acc_name, acc_id=acc_id,
                 from_cache=False, report_type=report_type,
             )
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             report_modal = ui.modal(
                 report_content,
                 title=f"AI Report \u2014 {acc_name}",
@@ -2637,6 +2642,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.modal_show(report_modal)
 
         except Exception as e:
+            ui.modal_remove()  # Explicitly remove loading modal + backdrop
             error_modal = ui.modal(
                 ui.div(
                     f"Failed to regenerate report: {str(e)}",
