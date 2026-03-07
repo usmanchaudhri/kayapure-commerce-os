@@ -12,6 +12,10 @@ from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 import plotly.graph_objects as go
 from shinywidgets import output_widget, render_widget
 import json
+import time
+import os
+import hashlib
+from datetime import date as _date_type, timedelta as _timedelta
 
 # Currency symbol lookup
 CURRENCY_SYMBOLS = {
@@ -34,8 +38,138 @@ def fmt_number(value):
 def fmt_budget(value_cents, currency="USD"):
     """Format a budget value from cents to currency display."""
     if value_cents is None or value_cents == 0:
-        return "—"
+        return "\u2014"
     return fmt_currency(float(value_cents) / 100, currency)
+
+
+# ============================================
+# Report Cache (in-memory with 24h TTL)
+# ============================================
+class ReportCache:
+    """In-memory cache for AI reports keyed by account_id + report_type."""
+    TTL_SECONDS = 24 * 60 * 60  # 24 hours
+
+    def __init__(self):
+        self._store: dict = {}  # key -> {"result": dict, "timestamp": float}
+
+    def _make_key(self, acc_id: str, report_type: str, days: int) -> str:
+        today = _date_type.today().isoformat()
+        raw = f"{acc_id}_{report_type}_{days}d_{today}"
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    def get(self, acc_id: str, report_type: str, days: int = 30):
+        key = self._make_key(acc_id, report_type, days)
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        if time.time() - entry["timestamp"] > self.TTL_SECONDS:
+            del self._store[key]
+            return None
+        return entry
+
+    def put(self, acc_id: str, report_type: str, result: dict, days: int = 30):
+        key = self._make_key(acc_id, report_type, days)
+        self._store[key] = {"result": result, "timestamp": time.time()}
+
+    def invalidate(self, acc_id: str, report_type: str, days: int = 30):
+        key = self._make_key(acc_id, report_type, days)
+        self._store.pop(key, None)
+
+
+_report_cache = ReportCache()
+
+
+# ============================================
+# PDF Report Generator
+# ============================================
+_REPORT_PDF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report_pdfs")
+os.makedirs(_REPORT_PDF_DIR, exist_ok=True)
+
+
+def _generate_report_pdf(analysis: dict, acc_name: str, acc_id: str) -> str:
+    """Generate a styled PDF from the analysis dict. Returns the file path."""
+    from weasyprint import HTML
+
+    a = analysis.get("analysis", {})
+    summary = a.get("summary", "No summary available.")
+    findings = a.get("key_findings", [])
+    risks = a.get("risks", [])
+    recs = a.get("recommendations", [])
+    confidence = a.get("confidence", 0)
+    snap = analysis.get("data_snapshot", {})
+    period = snap.get("period", {})
+    currency = snap.get("currency", "USD")
+    total_spend = snap.get("total_spend", 0)
+
+    period_text = ""
+    if period:
+        period_text = f"{period.get('start', '?')} to {period.get('end', '?')}"
+
+    findings_html = "".join(f'<div class="finding">{f}</div>' for f in findings)
+    risks_html = "".join(f'<div class="risk">{r}</div>' for r in risks)
+
+    recs_html = ""
+    for i, rec in enumerate(recs, 1):
+        action = rec.get("action", "")
+        rationale = rec.get("rationale", "")
+        impact = rec.get("expected_impact", "")
+        priority = rec.get("priority", "medium").upper()
+        p_color = "#dc2626" if priority == "HIGH" else ("#d97706" if priority == "MEDIUM" else "#16a34a")
+        recs_html += f'''
+        <div class="rec-card">
+            <div class="rec-action">{i}. {action}</div>
+            <div class="rec-rationale">{rationale}</div>
+            <div class="rec-meta">
+                <span class="badge" style="background:{p_color};color:white;">{priority}</span>
+                {f'<span class="badge" style="background:#1e40af;color:white;">{impact}</span>' if impact else ''}
+            </div>
+        </div>'''
+
+    conf_pct = int(confidence * 100)
+    conf_color = "#16a34a" if conf_pct >= 70 else ("#d97706" if conf_pct >= 40 else "#dc2626")
+
+    html_content = f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+    @page {{ size: A4; margin: 2cm; }}
+    body {{ font-family: "Helvetica Neue", Arial, sans-serif; color: #1e293b; line-height: 1.6; font-size: 13px; }}
+    h1 {{ font-size: 22px; color: #0f172a; border-bottom: 3px solid #f59e0b; padding-bottom: 8px; margin-bottom: 6px; }}
+    .meta {{ color: #64748b; font-size: 12px; margin-bottom: 24px; }}
+    h2 {{ font-size: 16px; color: #334155; margin-top: 24px; margin-bottom: 10px; border-left: 4px solid #f59e0b; padding-left: 10px; }}
+    .summary {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 14px; }}
+    .finding {{ background: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 8px 14px; margin-bottom: 6px; border-radius: 0 6px 6px 0; }}
+    .risk {{ background: #fef2f2; border-left: 3px solid #ef4444; padding: 8px 14px; margin-bottom: 6px; border-radius: 0 6px 6px 0; color: #991b1b; }}
+    .rec-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; }}
+    .rec-action {{ font-weight: 700; font-size: 14px; margin-bottom: 4px; }}
+    .rec-rationale {{ color: #475569; font-size: 13px; margin-bottom: 6px; }}
+    .rec-meta {{ display: flex; gap: 8px; }}
+    .badge {{ padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }}
+    .confidence {{ margin-top: 24px; padding: 12px 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }}
+    .conf-bar {{ height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; margin-top: 6px; }}
+    .conf-fill {{ height: 100%; border-radius: 5px; }}
+    .footer {{ margin-top: 30px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0; padding-top: 12px; }}
+</style>
+</head><body>
+    <h1>AI Ad Performance Report</h1>
+    <div class="meta">{acc_name} &middot; {acc_id} &middot; {period_text} &middot; Total Spend: {fmt_currency(total_spend, currency)}</div>
+    <h2>Summary</h2>
+    <div class="summary">{summary}</div>
+    {f"<h2>Key Findings</h2>{findings_html}" if findings else ""}
+    {f"<h2>Risks</h2>{risks_html}" if risks else ""}
+    {f"<h2>Recommendations</h2>{recs_html}" if recs else ""}
+    <div class="confidence">
+        <strong>AI Confidence:</strong> {conf_pct}%
+        <div class="conf-bar"><div class="conf-fill" style="width:{conf_pct}%;background:{conf_color};"></div></div>
+    </div>
+    <div class="footer">Generated by KayaPure Commerce OS &middot; {_date_type.today().isoformat()}</div>
+</body></html>'''
+
+    safe_name = acc_id.replace("act_", "").replace("/", "_")
+    filename = f"report_{safe_name}_{_date_type.today().isoformat()}.pdf"
+    filepath = os.path.join(_REPORT_PDF_DIR, filename)
+
+    HTML(string=html_content).write_pdf(filepath)
+    return filepath
 
 
 # ============================================
@@ -43,6 +177,18 @@ def fmt_budget(value_cents, currency="USD"):
 # ============================================
 app_ui = ui.page_fluid(
     ui.busy_indicators.use(spinners=False, pulse=True),
+    ui.tags.script("""
+        $(document).on('shiny:connected', function() {
+            Shiny.addCustomMessageHandler('download_pdf', function(msg) {
+                var a = document.createElement('a');
+                a.href = 'data:application/pdf;base64,' + msg.data;
+                a.download = msg.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+        });
+    """),
     ui.tags.style("""
         /* Shiny busy pulse overlay */
         .shiny-busy { opacity: 0.6; transition: opacity 0.3s; }
@@ -357,6 +503,29 @@ app_ui = ui.page_fluid(
             padding: 20px; background: #1c1520; border: 1px solid #7f1d1d; border-radius: 10px;
             color: #fca5a5; font-size: 15px; text-align: center;
         }
+        .ai-report-toolbar {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+            padding: 12px 16px; background: #161924; border: 1px solid #2d3348;
+            border-radius: 10px; flex-wrap: wrap;
+        }
+        .ai-report-cache-label {
+            font-size: 13px; color: #22c55e; font-weight: 600;
+            display: flex; align-items: center; gap: 6px; flex: 1;
+        }
+        .btn-download-pdf {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white; border: none; padding: 8px 20px; border-radius: 8px;
+            font-size: 14px; font-weight: 700; cursor: pointer;
+            display: flex; align-items: center; gap: 6px; transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+        .btn-download-pdf:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+        .btn-regenerate {
+            background: transparent; color: #f59e0b; border: 1px solid #f59e0b;
+            padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;
+        }
+        .btn-regenerate:hover { background: rgba(245, 158, 11, 0.1); }
         /* Date range selector */
         .date-range-bar {
             display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
@@ -1985,7 +2154,9 @@ def server(input: Inputs, output: Outputs, session: Session):
         return ui.div(*cards)
 
     # ---- Helper: build formatted report modal content ----
-    def _build_report_modal_content(analysis: dict, acc_name: str) -> ui.Tag:
+    def _build_report_modal_content(analysis: dict, acc_name: str, acc_id: str = "",
+                                     from_cache: bool = False, cache_age_min: int = 0,
+                                     report_type: str = "generate") -> ui.Tag:
         """Build a nicely formatted modal body from the AdsAnalysisResult dict."""
         a = analysis.get("analysis", {})
         summary = a.get("summary", "No summary available.")
@@ -2001,6 +2172,44 @@ def server(input: Inputs, output: Outputs, session: Session):
         total_spend = snap.get("total_spend", 0)
 
         sections = []
+
+        # Toolbar: cache label + PDF download + regenerate
+        toolbar_items = []
+        if from_cache:
+            if cache_age_min < 60:
+                age_text = f"Cached report ({cache_age_min} min ago)"
+            else:
+                age_text = f"Cached report ({cache_age_min // 60}h {cache_age_min % 60}m ago)"
+            check_svg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+            toolbar_items.append(
+                ui.span(ui.HTML(check_svg), f" {age_text}", class_="ai-report-cache-label")
+            )
+        else:
+            toolbar_items.append(ui.span("Fresh report", class_="ai-report-cache-label", style="color: #3b82f6;"))
+
+        # PDF download button
+        safe_id = acc_id.replace("'", "\\'")
+        safe_name = acc_name.replace("'", "\\'")
+        pdf_svg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>'
+        toolbar_items.append(
+            ui.tags.button(
+                ui.HTML(pdf_svg), " Download PDF",
+                class_="btn-download-pdf",
+                onclick=f"Shiny.setInputValue('download_pdf_click', '{safe_id}|{safe_name}|{report_type}', {{priority: 'event'}});",
+            )
+        )
+
+        # Regenerate button
+        refresh_svg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
+        toolbar_items.append(
+            ui.tags.button(
+                ui.HTML(refresh_svg), " Regenerate",
+                class_="btn-regenerate",
+                onclick=f"Shiny.setInputValue('regenerate_report_click', '{safe_id}|{safe_name}|{report_type}', {{priority: 'event'}});",
+            )
+        )
+
+        sections.append(ui.div(*toolbar_items, class_="ai-report-toolbar"))
 
         # Period + spend header
         period_text = ""
@@ -2096,7 +2305,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         return ui.div(*sections)
 
-    # ---- AI Reports: Generate Report handler ----
+    # ---- AI Reports: Generate Report handler (with caching) ----
     @reactive.effect
     @reactive.event(input.generate_report_click)
     async def _handle_generate_report():
@@ -2108,7 +2317,25 @@ def server(input: Inputs, output: Outputs, session: Session):
         acc_name = parts[1] if len(parts) > 1 else "Unknown"
         acc_currency = parts[2] if len(parts) > 2 else "USD"
 
-        # Show loading modal immediately
+        # Check cache first
+        cached = _report_cache.get(acc_id, "generate", days=30)
+        if cached:
+            age_min = int((time.time() - cached["timestamp"]) / 60)
+            result = cached["result"]
+            report_content = _build_report_modal_content(
+                result, acc_name, acc_id=acc_id,
+                from_cache=True, cache_age_min=age_min, report_type="generate",
+            )
+            report_modal = ui.modal(
+                report_content,
+                title=f"AI Report \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(report_modal)
+            return
+
+        # Show loading modal
         loading_modal = ui.modal(
             ui.div(
                 ui.div(class_="spinner"),
@@ -2131,9 +2358,13 @@ def server(input: Inputs, output: Outputs, session: Session):
                          f"Provide specific, actionable recommendations.",
             )
 
-            # Build formatted report
-            report_content = _build_report_modal_content(result, acc_name)
+            # Cache the result
+            _report_cache.put(acc_id, "generate", result, days=30)
 
+            report_content = _build_report_modal_content(
+                result, acc_name, acc_id=acc_id,
+                from_cache=False, report_type="generate",
+            )
             report_modal = ui.modal(
                 report_content,
                 title=f"AI Report \u2014 {acc_name}",
@@ -2158,7 +2389,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
             ui.modal_show(error_modal)
 
-    # ---- AI Reports: View Reports handler (also calls analyze) ----
+    # ---- AI Reports: View Reports handler (with caching) ----
     @reactive.effect
     @reactive.event(input.view_reports_click)
     async def _handle_view_reports():
@@ -2169,7 +2400,25 @@ def server(input: Inputs, output: Outputs, session: Session):
         acc_id = parts[0] if len(parts) > 0 else ""
         acc_name = parts[1] if len(parts) > 1 else "Unknown"
 
-        # Show loading modal immediately
+        # Check cache first
+        cached = _report_cache.get(acc_id, "view", days=30)
+        if cached:
+            age_min = int((time.time() - cached["timestamp"]) / 60)
+            result = cached["result"]
+            report_content = _build_report_modal_content(
+                result, acc_name, acc_id=acc_id,
+                from_cache=True, cache_age_min=age_min, report_type="view",
+            )
+            report_modal = ui.modal(
+                report_content,
+                title=f"AI Report \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(report_modal)
+            return
+
+        # Show loading modal
         loading_modal = ui.modal(
             ui.div(
                 ui.div(class_="spinner"),
@@ -2192,9 +2441,13 @@ def server(input: Inputs, output: Outputs, session: Session):
                          f"and specific actions to improve ROAS.",
             )
 
-            # Build formatted report
-            report_content = _build_report_modal_content(result, acc_name)
+            # Cache the result
+            _report_cache.put(acc_id, "view", result, days=30)
 
+            report_content = _build_report_modal_content(
+                result, acc_name, acc_id=acc_id,
+                from_cache=False, report_type="view",
+            )
             report_modal = ui.modal(
                 report_content,
                 title=f"AI Report \u2014 {acc_name}",
@@ -2270,6 +2523,134 @@ def server(input: Inputs, output: Outputs, session: Session):
             type="message",
             duration=6,
         )
+
+    # ---- AI Reports: Download PDF handler ----
+    @reactive.effect
+    @reactive.event(input.download_pdf_click)
+    async def _handle_download_pdf():
+        val = input.download_pdf_click()
+        if not val:
+            return
+        parts = val.split("|")
+        acc_id = parts[0] if len(parts) > 0 else ""
+        acc_name = parts[1] if len(parts) > 1 else "Unknown"
+        report_type = parts[2] if len(parts) > 2 else "generate"
+
+        # Get the cached result (should exist since user is viewing the report)
+        cached = _report_cache.get(acc_id, report_type, days=30)
+        if not cached:
+            ui.notification_show(
+                "Report data not found. Please generate the report first.",
+                type="warning",
+                duration=5,
+            )
+            return
+
+        try:
+            import base64
+            result = cached["result"]
+            filepath = _generate_report_pdf(result, acc_name, acc_id)
+            filename = os.path.basename(filepath)
+
+            with open(filepath, "rb") as f:
+                pdf_bytes = f.read()
+            b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+            # Use send_custom_message to trigger a JS download
+            await session.send_custom_message(
+                "download_pdf",
+                {"data": b64, "filename": filename},
+            )
+
+            ui.notification_show(
+                f"PDF ready: {filename}",
+                type="message",
+                duration=4,
+            )
+
+        except Exception as e:
+            ui.notification_show(
+                f"Failed to generate PDF: {str(e)}",
+                type="error",
+                duration=6,
+            )
+
+    # ---- AI Reports: Regenerate handler (bypasses cache) ----
+    @reactive.effect
+    @reactive.event(input.regenerate_report_click)
+    async def _handle_regenerate_report():
+        val = input.regenerate_report_click()
+        if not val:
+            return
+        parts = val.split("|")
+        acc_id = parts[0] if len(parts) > 0 else ""
+        acc_name = parts[1] if len(parts) > 1 else "Unknown"
+        report_type = parts[2] if len(parts) > 2 else "generate"
+
+        # Invalidate cache for this account + type
+        _report_cache.invalidate(acc_id, report_type, days=30)
+
+        # Show loading modal
+        loading_modal = ui.modal(
+            ui.div(
+                ui.div(class_="spinner"),
+                ui.div("Regenerating report with fresh data...", style="margin-top: 16px; font-size: 16px; color: #94a3b8;"),
+                ui.div("This may take 15\u201330 seconds.", style="margin-top: 6px; font-size: 14px; color: #475569;"),
+                class_="ai-report-modal-loading",
+            ),
+            title=f"Regenerating Report \u2014 {acc_name}",
+            size="l",
+            easy_close=False,
+        )
+        ui.modal_show(loading_modal)
+
+        try:
+            from services.ads_analysis_agent import ads_analysis_agent_service
+
+            if report_type == "generate":
+                question = (f"Analyse the ad performance for account {acc_name} ({acc_id}). "
+                            f"Find waste, winners, and optimization opportunities. "
+                            f"Provide specific, actionable recommendations.")
+            else:
+                question = (f"Provide a comprehensive performance report for account {acc_name} ({acc_id}). "
+                            f"Include spend efficiency, audience performance, creative fatigue signals, "
+                            f"and specific actions to improve ROAS.")
+
+            result = await ads_analysis_agent_service.analyze(
+                days=30,
+                question=question,
+            )
+
+            # Cache the fresh result
+            _report_cache.put(acc_id, report_type, result, days=30)
+
+            report_content = _build_report_modal_content(
+                result, acc_name, acc_id=acc_id,
+                from_cache=False, report_type=report_type,
+            )
+            report_modal = ui.modal(
+                report_content,
+                title=f"AI Report \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(report_modal)
+
+        except Exception as e:
+            error_modal = ui.modal(
+                ui.div(
+                    f"Failed to regenerate report: {str(e)}",
+                    class_="ai-report-error",
+                ),
+                ui.div(
+                    "Please ensure the backend server has been restarted and the OpenAI API key is configured.",
+                    style="color: #475569; font-size: 14px; text-align: center; margin-top: 12px;",
+                ),
+                title=f"Report Error \u2014 {acc_name}",
+                size="l",
+                easy_close=True,
+            )
+            ui.modal_show(error_modal)
 
 
 # ============================================
