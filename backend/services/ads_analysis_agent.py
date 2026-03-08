@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
 from config import settings
 from services.marketing import marketing_service
 
@@ -20,9 +20,14 @@ class AdsAnalysisResult(BaseModel):
 
 class AdsAnalysisAgentService:
     def __init__(self):
-        self.llm = ChatOpenAI(model=settings.LLM_MODEL,
-                              temperature=0.7,
-                              api_key=settings.OPENAI_API_KEY)
+        # self.llm = ChatOpenAI(model=settings.LLM_BASE_MODEL,
+        #                       temperature=0.7,
+        #                       api_key=settings.LLM_BASE_MODEL_API_KEY)
+        self.llm = ChatGoogleGenerativeAI(model=settings.LLM_BASE_MODEL,
+                                          temperature=0.7,
+                                          api_key=settings.LLM_BASE_MODEL_API_KEY,
+                                          max_retries=0)
+
         self.prompt = ChatPromptTemplate.from_messages([
             ("system",
              "You are a senior Meta Ads performance analyst."           
