@@ -1071,7 +1071,7 @@ async def get_inventory():
     return await logistics_service.get_inventory_status()
 
 @app.post("/api/marketing/analyze")
-async def analyze_ads(days: int=7, question: str = ""):
+async def analyze_ads(days: int=7, question: str = "Which campaigns waste budget and what should I change?"):
     return await ads_analysis_agent_service.analyze(days=days, question=question)
 
 # ============================================
