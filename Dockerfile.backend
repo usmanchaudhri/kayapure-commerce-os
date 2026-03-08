@@ -1,0 +1,79 @@
+# ============================================
+# KayaPure Commerce OS — Backend + Shiny Dashboard
+# Multi-stage build: deps → runtime
+# ============================================
+
+# ---------- Stage 1: Build dependencies ----------
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build-time system deps required by psycopg2-binary and weasyprint
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
+    && pip install --no-cache-dir --prefix=/install weasyprint
+
+# ---------- Stage 2: Runtime ----------
+FROM python:3.11-slim AS runtime
+
+LABEL maintainer="KayaPure <info@kayapure.com>"
+LABEL description="KayaPure Commerce OS — FastAPI backend + Shiny dashboard"
+
+# Runtime system deps:
+#   libpq5          — PostgreSQL client library (psycopg2)
+#   libpango-1.0-0, libpangocairo-1.0-0, libgdk-pixbuf-2.0-0,
+#   libffi8, libcairo2, libglib2.0-0  — WeasyPrint PDF rendering
+#   curl            — Docker health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi8 \
+    libcairo2 \
+    libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-built Python packages from builder stage
+COPY --from=builder /install /usr/local
+
+# Create non-root user for security
+RUN groupadd --gid 1000 kayapure \
+    && useradd --uid 1000 --gid kayapure --create-home kayapure
+
+# Set up application directory
+WORKDIR /app
+
+# Copy backend code
+COPY backend/ ./backend/
+
+# Copy shiny_app alongside backend (main.py imports from ../shiny_app/)
+COPY shiny_app/ ./shiny_app/
+
+# Create directories for logs and PDF report cache
+RUN mkdir -p /app/backend/logs /app/shiny_app/report_pdfs \
+    && chown -R kayapure:kayapure /app
+
+# Switch to non-root user
+USER kayapure
+
+# The backend working directory — all imports in main.py are relative to this
+WORKDIR /app/backend
+
+# Expose the FastAPI + Shiny port
+EXPOSE 8000
+
+# Health check: hit the FastAPI health endpoint every 30s
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# Start uvicorn (production mode: no reload, 2 workers)
+# Workers > 1 requires careful handling of in-memory state (report cache).
+# Start with 1 worker if report caching must be shared across requests.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

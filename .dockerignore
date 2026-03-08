@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Frontend (not needed in backend image)
+frontend/
+docs/
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+
+# Environment files (secrets injected at runtime, not baked in)
+backend/.env
+
+# Logs and caches (generated at runtime)
+backend/logs/
+shiny_app/report_pdfs/
+shiny_app/__pycache__/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker files themselves
+Dockerfile*
+docker-compose*.yml
+.dockerignore
