@@ -30,6 +30,8 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     STRATEGY_MODEL: str = os.getenv("STRATEGY_MODEL", "gpt-4.1-mini")
     PARSING_MODEL: str = os.getenv("PARSING_MODEL", "gpt-4.1-nano")
+    LLM_BASE_MODEL: str = os.getenv("LLM_BASE_MODEL", "gemini-3.1-pro-preview")
+    LLM_BASE_MODEL_API_KEY: str = os.getenv("LLM_BASE_MODEL_API_KEY", "")
 
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "kayapure-secret-key")
@@ -42,6 +44,7 @@ class Settings:
 
     # API Keys (legacy direct integrations)
     SHOPIFY_API_KEY: str = os.getenv("SHOPIFY_API_KEY", "mock_shopify_key")
+    META_ADS_API_KEY: str = os.getenv("META_ADS_API_KEY", "mock_meta_ads_api_key")
     AMAZON_SP_API_KEY: str = os.getenv("AMAZON_SP_API_KEY", "mock_amazon_sp_key")
     FLEXPORT_API_KEY: str = os.getenv("FLEXPORT_API_KEY", "mock_flexport_key")
 
