@@ -1,0 +1,103 @@
+# ============================================
+# KayaPure Commerce OS — Docker Compose
+# Orchestrates: PostgreSQL + FastAPI Backend + Shiny Dashboard
+# ============================================
+
+version: '3.9'
+
+services:
+  # ========== PostgreSQL Database ==========
+  db:
+    image: postgres:16-alpine
+    container_name: kayapure-db
+    
+    environment:
+      POSTGRES_USER: kayapure
+      POSTGRES_PASSWORD: kayapure123
+      POSTGRES_DB: kayapure_db
+      # Reduce logging noise in development
+      POSTGRES_INITDB_ARGS: "-c log_min_messages=WARNING"
+    
+    volumes:
+      # Persist database data across container restarts
+      - pgdata:/var/lib/postgresql/data
+      
+      # Auto-run initial schema migration on first startup
+      - ./backend/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001.sql
+    
+    ports:
+      # Expose PostgreSQL for local development/debugging
+      # Remove this in production for security
+      - "5432:5432"
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kayapure -d kayapure_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    
+    networks:
+      - kayapure-network
+    
+    restart: unless-stopped
+
+  # ========== FastAPI Backend + Shiny Dashboard ==========
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    
+    container_name: kayapure-backend
+    
+    # Load environment variables from .env file
+    # These can be overridden by the 'environment' section below
+    env_file:
+      - ./backend/.env
+    
+    # Override specific env vars for Docker networking
+    environment:
+      # Point to the PostgreSQL service by hostname (Docker DNS resolution)
+      DATABASE_URL: postgresql://kayapure:kayapure123@db:5432/kayapure_db
+      DATABASE_URL_ASYNC: postgresql+asyncpg://kayapure:kayapure123@db:5432/kayapure_db
+      
+      # Ensure the app listens on all interfaces (0.0.0.0) inside the container
+      HOST: 0.0.0.0
+      PORT: 8000
+    
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    ports:
+      # Expose FastAPI on localhost:8000
+      # API:       http://localhost:8000/api/health
+      # Dashboard: http://localhost:8000/dashboard
+      # Docs:      http://localhost:8000/docs
+      - "8000:8000"
+    
+    volumes:
+      # Mount logs directory for debugging (optional)
+      # Remove this line if you don't need persistent logs
+      - ./backend/logs:/app/backend/logs
+      
+      # Mount report PDFs directory for debugging (optional)
+      - ./shiny_app/report_pdfs:/app/shiny_app/report_pdfs
+    
+    networks:
+      - kayapure-network
+    
+    restart: unless-stopped
+    
+    # Graceful shutdown: give the app 30s to finish requests before killing
+    stop_grace_period: 30s
+
+# ========== Networks ==========
+networks:
+  kayapure-network:
+    driver: bridge
+
+# ========== Volumes ==========
+volumes:
+  pgdata:
+    driver: local
