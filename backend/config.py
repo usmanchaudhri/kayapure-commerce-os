@@ -94,5 +94,65 @@ class Settings:
             and bool(self.META_ADS_ACCOUNT_ID)
         )
 
+    # WhatsApp Cloud API
+    WHATSAPP_ENABLED: bool = os.getenv("WHATSAPP_ENABLED", "false").lower() == "true"
+    WHATSAPP_ACCESS_TOKEN: str = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+
+    @property
+    def whatsapp_ready(self) -> bool:
+        return (
+            self.WHATSAPP_ENABLED
+            and bool(self.WHATSAPP_ACCESS_TOKEN)
+            and bool(self.WHATSAPP_PHONE_NUMBER_ID)
+        )
+
+    # Apify
+    APIFY_TOKEN: str = os.getenv("APIFY_TOKEN", "")
+    APIFY_AMAZON_REVIEWS_ACTOR: str = os.getenv(
+        "APIFY_AMAZON_REVIEWS_ACTOR", "junglee~amazon-reviews-scraper"
+    )
+    APIFY_AMAZON_CATALOG_ACTOR: str = os.getenv(
+        "APIFY_AMAZON_CATALOG_ACTOR", "junglee~amazon-crawler"
+    )
+    APIFY_WEBHOOK_SECRET: str = os.getenv("APIFY_WEBHOOK_SECRET", "")
+    APIFY_PUBLIC_BASE_URL: str = os.getenv("APIFY_PUBLIC_BASE_URL", "http://127.0.0.1:8000")
+
+    @property
+    def apify_ready(self) -> bool:
+        return bool(self.APIFY_TOKEN)
+
+    @property
+    def apify_webhook_url(self) -> str:
+        base = (self.APIFY_PUBLIC_BASE_URL or "http://127.0.0.1:8000").rstrip("/")
+        return f"{base}/webhooks/apify"
+
+    # Saleor MCP (https://mcp.saleor.app/)
+    # Point SALEOR_MCP_URL at a local `uv run saleor-mcp` or hosted https://mcp.saleor.app/mcp
+    SALEOR_MCP_URL: str = os.getenv("SALEOR_MCP_URL", "http://127.0.0.1:6000/mcp")
+    SALEOR_API_URL: str = os.getenv("SALEOR_API_URL", "")
+    SALEOR_AUTH_TOKEN: str = os.getenv("SALEOR_AUTH_TOKEN", "")
+
+    # PostEx COD Merchant API (https://www.postex.pk/)
+    POSTEX_TOKEN: str = os.getenv("POSTEX_TOKEN", "")
+    POSTEX_BASE_URL: str = os.getenv(
+        "POSTEX_BASE_URL",
+        "https://api.postex.pk/services/integration/api/order/v1",
+    )
+    # Optional — shown on CPR PDF Contact Details (portal shows merchant email)
+    POSTEX_MERCHANT_EMAIL: str = os.getenv(
+        "POSTEX_MERCHANT_EMAIL",
+        "info@kayapuressence.com",
+    )
+    # Order sync / sales consolidation
+    POSTEX_SYNC_SINCE: str = os.getenv("POSTEX_SYNC_SINCE", "2024-01-01")
+    POSTEX_SYNC_LOOKBACK_DAYS: int = int(os.getenv("POSTEX_SYNC_LOOKBACK_DAYS", "30"))
+    POSTEX_SYNC_CHUNK_DAYS: int = int(os.getenv("POSTEX_SYNC_CHUNK_DAYS", "14"))
+    POSTEX_SYNC_ON_STARTUP: bool = os.getenv("POSTEX_SYNC_ON_STARTUP", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
 
 settings = Settings()

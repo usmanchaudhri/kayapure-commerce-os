@@ -18,3 +18,4 @@ langsmith>=0.1.0
 shiny>=1.0.0
 shinywidgets>=0.3.0
 plotly>=5.18.0
+fpdf2>=2.7.0

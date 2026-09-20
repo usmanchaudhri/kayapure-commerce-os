@@ -24,6 +24,7 @@ services:
       
       # Auto-run initial schema migration on first startup
       - ./backend/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001.sql
+      - ./backend/migrations/002_reports_outcomes.sql:/docker-entrypoint-initdb.d/002.sql
     
     ports:
       # Expose PostgreSQL for local development/debugging

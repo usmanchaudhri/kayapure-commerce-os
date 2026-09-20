@@ -1,0 +1,17 @@
+{
+  "act_520709504005746": {
+    "product_cost": 12.0,
+    "shipping_cost": 5.0,
+    "payment_fee_pct": 2.9,
+    "payment_fee_fixed": 0.3,
+    "avg_discount_pct": 15.0,
+    "refund_rate_pct": 5.0,
+    "subscription_share_pct": 25.0,
+    "subscription_retention_60d_pct": 70.0,
+    "repeat_purchase_rate_90d_pct": 35.0,
+    "avg_order_value": 48.0,
+    "gross_margin_pct": 55.0,
+    "ltv_multiplier_60d": 1.35,
+    "ltv_multiplier_90d": 1.55
+  }
+}

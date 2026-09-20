@@ -8,15 +8,14 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
-# Install build-time system deps required by psycopg2-binary and weasyprint
+# Install build-time system deps required by psycopg2-binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
-    && pip install --no-cache-dir --prefix=/install weasyprint
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---------- Stage 2: Runtime ----------
 FROM python:3.11-slim AS runtime
@@ -25,18 +24,10 @@ LABEL maintainer="KayaPure <info@kayapure.com>"
 LABEL description="KayaPure Commerce OS — FastAPI backend + Shiny dashboard"
 
 # Runtime system deps:
-#   libpq5          — PostgreSQL client library (psycopg2)
-#   libpango-1.0-0, libpangocairo-1.0-0, libgdk-pixbuf-2.0-0,
-#   libffi8, libcairo2, libglib2.0-0  — WeasyPrint PDF rendering
-#   curl            — Docker health check
+#   libpq5 — PostgreSQL client library (psycopg2)
+#   curl   — Docker health check
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
-    libffi8 \
-    libcairo2 \
-    libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

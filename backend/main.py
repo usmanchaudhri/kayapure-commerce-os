@@ -10,7 +10,8 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Depends, Request, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -21,8 +22,17 @@ from models.schemas import (
     SKU,
     DailyMetric,
     ActionProposal,
+    ActionOutcome,
+    AdsAnalysisReport,
+    ApifyActorRun,
     VMAuditTrail,
     ActionStatus,
+    ProfitLeakAnalysisRun,
+    ProfitLeakFinding,
+    ProfitLeakFindingEvidence,
+    PostExOrder,
+    PostExCprReceipt,
+    PostExSyncState,
 )
 from models.api_models import (
     SKUResponse,
@@ -45,6 +55,17 @@ from services.marketing import marketing_service
 from services.logistics import logistics_service
 from services.facebook_ads_client import FacebookAdsClient
 from services.ads_analysis_agent import ads_analysis_agent_service
+from services import action_queue
+from services.report_store import list_reports_for_account, report_to_result, save_report
+from services.profit_leak_store import (
+    get_profit_leak_run,
+    list_profit_leak_runs,
+    run_to_result,
+    update_finding_status,
+)
+from services.whatsapp_service import whatsapp_service
+from services.apify_amazon import apify_amazon_service
+from services.apify_client import ApifyError
 from graph.workflow import commerce_graph, firecracker_executor_node, CommerceState
 
 # ============================================
@@ -106,6 +127,7 @@ async def lifespan(app: FastAPI):
     startup_logger.info("KayaPure Commerce OS starting up...")
     startup_logger.info(f"LangSmith tracing: {'ENABLED' if langsmith_enabled else 'DISABLED'}")
     startup_logger.info(f"Facebook Ads API enabled: {settings.FACEBOOK_ADS_ENABLED}")
+    startup_logger.info(f"WhatsApp Cloud API enabled: {settings.WHATSAPP_ENABLED}")
     startup_logger.info(f"Firecracker mock: {settings.FIRECRACKER_MOCK}")
     startup_logger.info("=" * 60)
 
@@ -150,6 +172,39 @@ async def lifespan(app: FastAPI):
             fb_client = None
     else:
         startup_logger.info("Facebook Ads API disabled or not configured — MarketingService using mock data")
+
+    whatsapp_service.configure()
+    startup_logger.info(
+        f"WhatsApp Cloud API: {'READY' if whatsapp_service.is_ready else 'not configured'}"
+    )
+    startup_logger.info(
+        f"Apify: {'READY' if settings.apify_ready else 'not configured'} "
+        f"(webhook {settings.apify_webhook_url})"
+    )
+    apify_amazon_service.configure()
+
+    # PostEx order sync (backfill continuation / incremental) in background
+    if settings.POSTEX_TOKEN and settings.POSTEX_SYNC_ON_STARTUP:
+        async def _postex_startup_sync():
+            await asyncio.sleep(2)
+            db = SessionLocal()
+            try:
+                from services.postex_sync import postex_sync_service
+
+                result = await postex_sync_service.run(db, mode="auto", max_chunks=2)
+                startup_logger.info(
+                    "PostEx startup sync finished",
+                    extra={"postex_sync": result},
+                )
+            except Exception as exc:
+                startup_logger.warning(f"PostEx startup sync failed: {exc}")
+            finally:
+                db.close()
+
+        asyncio.create_task(_postex_startup_sync())
+        startup_logger.info("PostEx sync scheduled on startup")
+    else:
+        startup_logger.info("PostEx sync on startup: skipped")
 
     startup_logger.info("KayaPure Commerce OS ready to serve requests")
 
@@ -375,55 +430,89 @@ async def get_all_campaigns(
 
 
 @app.post("/api/facebook-ads/campaigns/{campaign_id}/pause")
-async def pause_campaign(campaign_id: str):
-    """Pause a campaign."""
-    try:
-        if not marketing_service._fb_client:
-            return {"error": "Facebook Ads client not configured"}
-        result = await marketing_service._fb_client.update_campaign(campaign_id, status="PAUSED")
-        return {"success": True, "result": result, "action": "paused", "campaign_id": campaign_id}
-    except Exception as e:
-        logger.error(f"Failed to pause campaign {campaign_id}: {e}")
-        return {"error": str(e)}
+async def pause_campaign(
+    campaign_id: str,
+    campaign_name: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
+    """Queue a campaign pause for human approval."""
+    action = action_queue.propose_meta_pause(
+        db,
+        campaign_id=campaign_id,
+        campaign_name=campaign_name or campaign_id,
+    )
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+        "message": "Pause queued for approval",
+    }
 
 
 @app.post("/api/facebook-ads/campaigns/{campaign_id}/activate")
-async def activate_campaign(campaign_id: str):
-    """Activate (resume) a paused campaign."""
-    try:
-        if not marketing_service._fb_client:
-            return {"error": "Facebook Ads client not configured"}
-        result = await marketing_service._fb_client.update_campaign(campaign_id, status="ACTIVE")
-        return {"success": True, "result": result, "action": "activated", "campaign_id": campaign_id}
-    except Exception as e:
-        logger.error(f"Failed to activate campaign {campaign_id}: {e}")
-        return {"error": str(e)}
+async def activate_campaign(
+    campaign_id: str,
+    campaign_name: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
+    """Queue a campaign activation for human approval."""
+    action = action_queue.propose_meta_activate(
+        db,
+        campaign_id=campaign_id,
+        campaign_name=campaign_name or campaign_id,
+    )
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+        "message": "Activation queued for approval",
+    }
 
 
 @app.post("/api/facebook-ads/campaigns/{campaign_id}/delete")
-async def delete_campaign(campaign_id: str):
-    """Delete (archive) a campaign."""
-    try:
-        if not marketing_service._fb_client:
-            return {"error": "Facebook Ads client not configured"}
-        result = await marketing_service._fb_client.delete_campaign(campaign_id)
-        return {"success": True, "result": result, "action": "deleted", "campaign_id": campaign_id}
-    except Exception as e:
-        logger.error(f"Failed to delete campaign {campaign_id}: {e}")
-        return {"error": str(e)}
+async def delete_campaign(
+    campaign_id: str,
+    campaign_name: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
+    """Queue a campaign archive for human approval."""
+    action = action_queue.propose_meta_delete(
+        db,
+        campaign_id=campaign_id,
+        campaign_name=campaign_name or campaign_id,
+    )
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+        "message": "Archive queued for approval",
+    }
 
 
 @app.post("/api/facebook-ads/campaigns/{campaign_id}/budget")
-async def update_campaign_budget(campaign_id: str, daily_budget: int = Query(..., description="New daily budget in cents")):
-    """Update a campaign's daily budget."""
-    try:
-        if not marketing_service._fb_client:
-            return {"error": "Facebook Ads client not configured"}
-        result = await marketing_service._fb_client.update_campaign(campaign_id, daily_budget=daily_budget)
-        return {"success": True, "result": result, "action": "budget_updated", "campaign_id": campaign_id, "new_budget": daily_budget}
-    except Exception as e:
-        logger.error(f"Failed to update budget for campaign {campaign_id}: {e}")
-        return {"error": str(e)}
+async def update_campaign_budget(
+    campaign_id: str,
+    daily_budget: int = Query(..., description="New daily budget in cents"),
+    campaign_name: str = Query(default=""),
+    db: Session = Depends(get_db),
+):
+    """Queue a campaign budget change for human approval."""
+    action = action_queue.propose_meta_budget(
+        db,
+        campaign_id=campaign_id,
+        campaign_name=campaign_name or campaign_id,
+        daily_budget_cents=daily_budget,
+    )
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+        "message": "Budget update queued for approval",
+    }
 
 
 # ============================================
@@ -622,126 +711,59 @@ def get_action(action_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/actions/{action_id}/decide")
 async def decide_action(action_id: int, decision: ActionApproval, db: Session = Depends(get_db)):
-    """Approve or deny an action proposal. Triggers Firecracker execution on approval."""
+    """Approve or deny an action proposal. Executes channel actions or Firecracker on approval."""
     action_logger = get_logger("agent")
     action_logger.info(
         f"Action decision received: action_id={action_id}, decision={decision.action}",
         extra={"action_id": action_id, "decision": decision.action},
     )
 
-    action = db.query(ActionProposal).filter(ActionProposal.id == action_id).first()
-    if not action:
-        raise HTTPException(status_code=404, detail="Action not found")
-    if action.status != ActionStatus.PENDING:
-        raise HTTPException(status_code=400, detail=f"Action is already {action.status}")
-
-    if decision.action == "deny":
-        action.status = ActionStatus.DENIED
-        db.commit()
-        action_logger.info(f"Action {action_id} DENIED", extra={"action_id": action_id})
-        await ws_manager.broadcast({
-            "type": "action_update",
-            "data": {"id": action.id, "status": "denied", "comment": decision.comment},
-        })
-        return {"status": "denied", "action_id": action.id}
-
-    # Approve and execute
-    action.status = ActionStatus.EXECUTING
-    db.commit()
-    action_logger.info(
-        f"Action {action_id} APPROVED — executing in Firecracker",
-        extra={"action_id": action_id, "action_type": action.action_type},
-    )
-
-    await ws_manager.broadcast({
-        "type": "action_update",
-        "data": {"id": action.id, "status": "executing"},
-    })
-
-    # Execute in Firecracker
     try:
-        state: CommerceState = {
-            "current_action": {
-                "action_type": action.action_type,
-                "parameters": action.parameters or {},
-            },
-            "sales_data": None,
-            "ad_spend_data": None,
-            "inventory_data": None,
-            "pnl_summary": None,
-            "sku_analysis": None,
-            "proposed_actions": [],
-            "agent_reasoning": None,
-            "approval_status": "approved",
-            "execution_result": None,
-            "thread_id": str(uuid.uuid4()),
-            "cycle_count": 0,
-            "agent_logs": [],
-            "errors": [],
-        }
+        if decision.action == "deny":
+            result = await action_queue.deny_action(db, action_id, comment=decision.comment)
+            await ws_manager.broadcast({
+                "type": "action_update",
+                "data": {"id": action_id, "status": "denied", "comment": decision.comment},
+            })
+            return result
 
-        result_state = await firecracker_executor_node(state)
-        execution_result = result_state.get("execution_result", {})
-
-        # Record in audit trail
-        vm_session_id = execution_result.get("vm_session_id", f"fc-{uuid.uuid4().hex[:12]}")
-        audit = VMAuditTrail(
-            session_id=vm_session_id,
-            action_proposal_id=action.id,
-            vm_boot_time_ms=execution_result.get("boot_time_ms", 0),
-            payload_hash=execution_result.get("payload_hash", ""),
-            code_executed=json.dumps(action.parameters),
-            execution_result=execution_result,
-            status="completed" if execution_result.get("success") else "failed",
-            hardware_signature=execution_result.get("hardware_signature", ""),
-        )
-        audit.completed_at = datetime.utcnow()
-        db.add(audit)
-
-        action.status = ActionStatus.COMPLETED if execution_result.get("success") else ActionStatus.FAILED
-        action.result = execution_result
-        action.vm_session_id = vm_session_id
-        db.commit()
-
-        action_logger.info(
-            f"Action {action_id} execution {'COMPLETED' if execution_result.get('success') else 'FAILED'}",
-            extra={
-                "action_id": action_id,
-                "vm_session_id": vm_session_id,
-                "success": execution_result.get("success"),
-                "boot_time_ms": execution_result.get("boot_time_ms"),
-            },
-        )
-
-        # Broadcast logs
-        for log in result_state.get("agent_logs", []):
-            await ws_manager.broadcast({"type": "agent_log", "data": log})
-
+        result = await action_queue.approve_action(db, action_id, comment=decision.comment)
         await ws_manager.broadcast({
             "type": "action_update",
             "data": {
-                "id": action.id,
-                "status": action.status.value if hasattr(action.status, 'value') else str(action.status),
-                "result": execution_result,
+                "id": action_id,
+                "status": result.get("status"),
+                "result": result.get("execution_result"),
             },
         })
-
-        return {
-            "status": action.status.value if hasattr(action.status, 'value') else str(action.status),
-            "action_id": action.id,
-            "execution_result": execution_result,
-        }
-
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        action.status = ActionStatus.FAILED
-        action.result = {"error": str(e)}
-        db.commit()
-        action_logger.error(
-            f"Action {action_id} execution FAILED: {e}",
-            extra={"action_id": action_id, "error": str(e)},
-            exc_info=True,
-        )
+        action_logger.error(f"Action {action_id} execution FAILED: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/actions/{action_id}/outcomes")
+def get_action_outcomes(action_id: int, db: Session = Depends(get_db)):
+    """List recorded outcomes for an action proposal."""
+    outcomes = (
+        db.query(ActionOutcome)
+        .filter(ActionOutcome.action_proposal_id == action_id)
+        .order_by(desc(ActionOutcome.recorded_at))
+        .all()
+    )
+    return [
+        {
+            "id": o.id,
+            "outcome_type": o.outcome_type,
+            "success": o.success,
+            "metrics_json": o.metrics_json,
+            "notes": o.notes,
+            "recorded_at": o.recorded_at.isoformat() if o.recorded_at else None,
+        }
+        for o in outcomes
+    ]
 
 
 # ============================================
@@ -1071,8 +1093,451 @@ async def get_inventory():
     return await logistics_service.get_inventory_status()
 
 @app.post("/api/marketing/analyze")
-async def analyze_ads(days: int=7, question: str = "Which campaigns waste budget and what should I change?"):
-    return await ads_analysis_agent_service.analyze(days=days, question=question)
+async def analyze_ads(
+    days: int = 7,
+    question: str = "Which campaigns waste budget and what should I change?",
+    account_id: str = Query(default=""),
+    account_name: str = Query(default=""),
+    persist: bool = Query(default=True),
+    report_type: str = Query(default="generate"),
+    db: Session = Depends(get_db),
+):
+    result = await ads_analysis_agent_service.analyze(
+        days=days,
+        question=question,
+        account_id=account_id or None,
+        account_name=account_name or None,
+    )
+    if persist and account_id:
+        save_report(
+            db,
+            account_id=account_id,
+            account_name=account_name or account_id,
+            report_type=report_type,
+            days=days,
+            question=question,
+            result=result,
+        )
+    return result
+
+
+@app.get("/api/marketing/profit-leak-scan")
+async def profit_leak_scan(
+    since: str = Query(..., description="Start date YYYY-MM-DD"),
+    until: str = Query(..., description="End date YYYY-MM-DD"),
+    account_id: str = Query(default=""),
+    force_refresh: bool = Query(default=False),
+    explain: bool = Query(default=True),
+    persist: bool = Query(default=True),
+    db: Session = Depends(get_db),
+):
+    """Run deterministic profit leak scan with optional LLM explanations and persistence."""
+    from services.profit_leak_scanner import profit_leak_scanner_service
+
+    return await profit_leak_scanner_service.scan_all_accounts(
+        since=since,
+        until=until,
+        account_id=account_id or None,
+        force_refresh=force_refresh,
+        explain=explain,
+        persist=persist,
+        db=db if persist else None,
+    )
+
+
+@app.get("/api/marketing/profit-leak-runs")
+def profit_leak_runs_list(
+    account_id: str = Query(default=""),
+    limit: int = Query(default=20, le=50),
+    db: Session = Depends(get_db),
+):
+    runs = list_profit_leak_runs(db, account_id=account_id or None, limit=limit)
+    return [
+        {
+            "id": r.id,
+            "account_id": r.account_id,
+            "account_name": r.account_name,
+            "period_start": r.period_start.strftime("%Y-%m-%d"),
+            "period_end": r.period_end.strftime("%Y-%m-%d"),
+            "finding_count": (r.summary_json or {}).get("finding_count", 0),
+            "total_opportunity_max": (r.summary_json or {}).get("total_opportunity_max", 0),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in runs
+    ]
+
+
+@app.get("/api/marketing/profit-leak-runs/{run_id}")
+def profit_leak_run_detail(run_id: int, db: Session = Depends(get_db)):
+    run = get_profit_leak_run(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Profit leak scan not found")
+    return run_to_result(run)
+
+
+@app.patch("/api/marketing/profit-leak-findings/{finding_id}/status")
+def profit_leak_finding_status(
+    finding_id: str,
+    status: str = Query(..., description="open | accepted | dismissed | inconclusive | completed"),
+    db: Session = Depends(get_db),
+):
+    allowed = {"open", "accepted", "dismissed", "inconclusive", "completed"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of {sorted(allowed)}")
+    finding = update_finding_status(db, finding_id, status)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return {"id": finding.id, "status": finding.status}
+
+
+@app.get("/api/marketing/daily-diagnosis")
+async def marketing_daily_diagnosis(
+    since: str = Query(...),
+    until: str = Query(...),
+    account_id: str = Query(default=""),
+    explain: bool = Query(default=True),
+):
+    from services.daily_account_diagnosis import daily_account_diagnosis_service
+
+    return await daily_account_diagnosis_service.diagnose_all(
+        since=since,
+        until=until,
+        account_id=account_id or None,
+        explain=explain,
+    )
+
+
+@app.get("/api/marketing/creative-intelligence")
+async def marketing_creative_intelligence(
+    since: str = Query(...),
+    until: str = Query(...),
+    account_id: str = Query(default=""),
+):
+    from services.creative_intelligence import creative_intelligence_service
+
+    return await creative_intelligence_service.analyze_all(
+        since=since,
+        until=until,
+        account_id=account_id or None,
+    )
+
+
+@app.get("/api/marketing/funnel-reconciliation")
+async def marketing_funnel_reconciliation(
+    since: str = Query(...),
+    until: str = Query(...),
+    account_id: str = Query(default=""),
+):
+    from services.funnel_reconciliation import funnel_reconciliation_service
+
+    return await funnel_reconciliation_service.reconcile_all(
+        since=since,
+        until=until,
+        account_id=account_id or None,
+    )
+
+
+@app.get("/api/marketing/supplement-economics")
+async def marketing_supplement_economics(
+    since: str = Query(...),
+    until: str = Query(...),
+    account_id: str = Query(default=""),
+):
+    from services.supplement_economics import supplement_economics_service
+
+    return await supplement_economics_service.analyze_all(
+        since=since,
+        until=until,
+        account_id=account_id or None,
+    )
+
+
+@app.get("/api/marketing/reports")
+def list_marketing_reports(
+    account_id: str = Query(...),
+    limit: int = Query(default=10, le=50),
+    db: Session = Depends(get_db),
+):
+    reports = list_reports_for_account(db, account_id, limit=limit)
+    return [
+        {
+            "id": r.id,
+            "account_id": r.account_id,
+            "account_name": r.account_name,
+            "report_type": r.report_type,
+            "days": r.days,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in reports
+    ]
+
+
+@app.get("/api/marketing/reports/{report_id}")
+def get_marketing_report(report_id: int, db: Session = Depends(get_db)):
+    report = db.query(AdsAnalysisReport).filter(AdsAnalysisReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report_to_result(report)
+
+
+@app.get("/api/marketing/reports/{report_id}/pdf")
+def download_marketing_report_pdf(report_id: int, db: Session = Depends(get_db)):
+    report = db.query(AdsAnalysisReport).filter(AdsAnalysisReport.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    from shiny_app.lib.report_pdf import generate_report_pdf_bytes
+
+    result = report_to_result(report)
+    result["report_id"] = report.id
+    pdf_bytes, filename = generate_report_pdf_bytes(
+        result,
+        report.account_name or report.account_id,
+        report.account_id,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/marketing/report-pdfs/{filename}")
+def serve_session_report_pdf(filename: str):
+    """Serve a PDF written by the dashboard session. Not a DB-backed report."""
+    from shiny_app.lib.report_pdf import resolve_report_pdf_path
+
+    filepath = resolve_report_pdf_path(filename)
+    if not filepath:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(
+        filepath,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/postex/pdfs/{filename}")
+def serve_postex_pdf(filename: str):
+    """Serve airway bill / load sheet PDFs generated via PostEx API."""
+    from shiny_app.lib.postex_client import resolve_postex_pdf_path
+
+    filepath = resolve_postex_pdf_path(filename)
+    if not filepath:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(
+        str(filepath),
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+# ============================================
+# PostEx order sync + sales consolidation
+# ============================================
+@app.post("/api/postex/sync")
+async def postex_sync(
+    mode: str = Query(default="auto", pattern="^(auto|backfill|incremental)$"),
+    max_chunks: Optional[int] = Query(default=None, ge=1, le=500),
+    background: bool = Query(default=True),
+    db: Session = Depends(get_db),
+):
+    """Start PostEx order sync (backfill and/or incremental lookback)."""
+    if not settings.POSTEX_TOKEN:
+        raise HTTPException(status_code=400, detail="POSTEX_TOKEN is not configured")
+
+    from services.postex_sync import get_or_create_sync_state, postex_sync_service, sync_state_dict
+
+    state = get_or_create_sync_state(db)
+    if postex_sync_service._lock.locked():
+        return {**sync_state_dict(state), "message": "Sync already running", "started": False}
+
+    if background:
+        async def _run():
+            session = SessionLocal()
+            try:
+                await postex_sync_service.run(
+                    session, mode=mode, max_chunks=max_chunks
+                )
+            except Exception:
+                pass
+            finally:
+                session.close()
+
+        asyncio.create_task(_run())
+        # Mark running optimistically so status polls show progress
+        state.status = "running"
+        state.last_error = None
+        db.commit()
+        db.refresh(state)
+        return {**sync_state_dict(state), "message": "Sync started", "started": True}
+
+    result = await postex_sync_service.run(db, mode=mode, max_chunks=max_chunks)
+    return {**result, "started": True, "message": "Sync completed"}
+
+
+@app.get("/api/postex/sync/status")
+def postex_sync_status(db: Session = Depends(get_db)):
+    from services.postex_sync import get_or_create_sync_state, sync_state_dict
+
+    state = get_or_create_sync_state(db)
+    return sync_state_dict(state)
+
+
+@app.get("/api/postex/sales/summary")
+def postex_sales_summary(
+    from_date: Optional[str] = Query(default=None, alias="from"),
+    to_date: Optional[str] = Query(default=None, alias="to"),
+    db: Session = Depends(get_db),
+):
+    """Consolidated PostEx sales totals from synced orders."""
+    from services.postex_sales import sales_summary
+    from services.postex_sync import _parse_datetime, get_or_create_sync_state, sync_state_dict
+
+    from_dt = _parse_datetime(from_date) if from_date else None
+    to_dt = _parse_datetime(to_date) if to_date else None
+    if to_dt and to_date and "T" not in str(to_date) and len(str(to_date)) <= 10:
+        # Inclusive end-of-day for date-only filters
+        to_dt = to_dt.replace(hour=23, minute=59, second=59)
+    summary = sales_summary(db, from_dt=from_dt, to_dt=to_dt)
+    state = get_or_create_sync_state(db)
+    return {**summary, "sync": sync_state_dict(state)}
+
+
+@app.get("/api/postex/orders")
+def postex_orders_list(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    status: Optional[str] = Query(default=None),
+    settled: Optional[bool] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Paginated synced PostEx orders."""
+    q = db.query(PostExOrder)
+    if status:
+        q = q.filter(PostExOrder.transaction_status.ilike(status))
+    if settled is True:
+        q = q.filter(PostExOrder.settle.is_(True))
+    elif settled is False:
+        q = q.filter((PostExOrder.settle.is_(False)) | (PostExOrder.settle.is_(None)))
+    total = q.count()
+    rows = (
+        q.order_by(desc(PostExOrder.transaction_date), PostExOrder.tracking_number)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "tracking_number": row.tracking_number,
+                "order_ref_number": row.order_ref_number,
+                "transaction_status": row.transaction_status,
+                "transaction_date": row.transaction_date.isoformat()
+                if row.transaction_date
+                else None,
+                "invoice_payment": row.invoice_payment,
+                "upfront_payment": row.upfront_payment,
+                "reserve_payment": row.reserve_payment,
+                "settle": row.settle,
+                "settlement_date": row.settlement_date.isoformat()
+                if row.settlement_date
+                else None,
+                "cpr1": row.cpr1,
+                "cpr2": row.cpr2,
+                "city_name": row.city_name,
+                "customer_name": row.customer_name,
+                "synced_at": row.synced_at.isoformat() if row.synced_at else None,
+            }
+        )
+    return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+
+# ============================================
+# Apify Actor inbox
+# ============================================
+@app.post("/webhooks/apify")
+async def apify_webhook(request: Request):
+    """Receive ACTOR.RUN.SUCCEEDED from Apify Console and load the dataset."""
+    secret = request.headers.get("x-apify-webhook-secret") or ""
+    auth = request.headers.get("authorization") or ""
+    if not secret and auth.lower().startswith("bearer "):
+        secret = auth[7:].strip()
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Webhook body must be JSON.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Webhook body must be a JSON object.")
+    try:
+        result = await apify_amazon_service.ingest_webhook(payload, secret=secret or None)
+    except ApifyError as exc:
+        message = str(exc)
+        status = 401 if "secret" in message.lower() else 400
+        raise HTTPException(status_code=status, detail=message) from exc
+    return result
+
+
+@app.get("/api/apify/latest")
+async def apify_latest():
+    latest = apify_amazon_service.latest_saved()
+    return {
+        "ready": apify_amazon_service.is_ready,
+        "runs": apify_amazon_service.list_saved(),
+        "latest": latest,
+    }
+
+
+# ============================================
+# WhatsApp Cloud API
+# ============================================
+@app.get("/api/whatsapp/status")
+async def whatsapp_status():
+    return {
+        "enabled": settings.WHATSAPP_ENABLED,
+        "ready": whatsapp_service.is_ready,
+        "phone_number_id": settings.WHATSAPP_PHONE_NUMBER_ID or None,
+    }
+
+
+@app.post("/api/whatsapp/messages/text")
+async def propose_whatsapp_text(
+    to: str = Query(...),
+    message: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Queue a WhatsApp text message for approval."""
+    action = action_queue.propose_whatsapp_text(db, to=to, message=message)
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+    }
+
+
+@app.post("/api/whatsapp/messages/template")
+async def propose_whatsapp_template(
+    to: str = Query(...),
+    template_name: str = Query(...),
+    language_code: str = Query(default="en_US"),
+    db: Session = Depends(get_db),
+):
+    """Queue a WhatsApp template message for approval."""
+    action = action_queue.propose_whatsapp_template(
+        db,
+        to=to,
+        template_name=template_name,
+        language_code=language_code,
+    )
+    return {
+        "success": True,
+        "proposed": True,
+        "action_id": action.id,
+        "status": action.status.value,
+    }
 
 # ============================================
 # WebSocket Endpoint

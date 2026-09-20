@@ -4,7 +4,7 @@ __pycache__/
 *.egg-info/
 dist/
 *.egg
-.venv/
+.venv
 venv/
 
 # Node.js
@@ -29,5 +29,17 @@ Thumbs.db
 # Logs
 *.log
 
+# Generated report PDFs
+shiny_app/report_pdfs/*.pdf
+shiny_app/postex_pdfs/*.pdf
+
 # Manus internal
 .manus*/
+
+# Secrets — never commit
+.env
+backend/.env
+
+# Log archives
+backend/logs/
+*.log.*
