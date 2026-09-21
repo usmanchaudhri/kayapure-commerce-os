@@ -30,15 +30,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.backend
           platforms: linux/amd64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
-          build-args: |
-            NEXT_PUBLIC_SALEOR_API_URL=https://api.kayapure.com/graphql/
-            NEXT_PUBLIC_STOREFRONT_URL=https://storefront.kayapure.com
-            NEXT_PUBLIC_DEFAULT_CHANNEL=default-channel
           cache-from: type=gha
           cache-to: type=gha,mode=max
