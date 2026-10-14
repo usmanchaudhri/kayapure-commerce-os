@@ -3,6 +3,7 @@
 from shiny import Inputs, Outputs, Session, reactive, ui
 
 _NAV_BUTTONS = {
+    "nav_dashboard": "dashboard",
     "nav_profit_leak_scanner": "profit_leak_scanner",
     "nav_daily_diagnosis": "daily_diagnosis",
     "nav_creative_intelligence": "creative_intelligence",
@@ -10,6 +11,7 @@ _NAV_BUTTONS = {
     "nav_supplement_economics": "supplement_economics",
     "nav_ai_reports": "ai_reports",
     "nav_saleor_mcp": "saleor_mcp",
+    "nav_ingredient_research": "ingredient_research",
     "nav_postex": "postex",
 }
 

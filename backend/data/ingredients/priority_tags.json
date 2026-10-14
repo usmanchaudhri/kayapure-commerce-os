@@ -1,0 +1,32 @@
+{
+  "highlighted": [
+    "BCAAs",
+    "Biotin",
+    "Gingko Biloba",
+    "Hyaluronic Acid",
+    "L-Carnitine HCL",
+    "L-Glutathione",
+    "MSM",
+    "Serratiopeptidase",
+    "Shilajit (Asphaltum Punjabianum)",
+    "Stevia",
+    "Tongkat Ali",
+    "Tribulus Terrestris"
+  ],
+  "seven_in_one_family": [
+    "Ashwagandha (Withania Somnifera)",
+    "Black Pepper",
+    "Curcuma Longa (Turmeric)",
+    "Gingko Biloba",
+    "Maca",
+    "Shilajit (Asphaltum Punjabianum)",
+    "Stevia",
+    "Tongkat Ali",
+    "Tribulus Terrestris"
+  ],
+  "default_hard_excludes": [
+    "Yohimbine",
+    "Senna Leaf",
+    "St John Wort"
+  ]
+}

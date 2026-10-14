@@ -1,0 +1,1148 @@
+{
+  "version": "2026-10-07",
+  "source": "research-agent/reports/2026-10-07-kayapure-ingredient-master-list.json",
+  "count": 184,
+  "ingredients": [
+    {
+      "name": "Acai Berry",
+      "canonical": "Acai Berry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Acetyl L-Carnitine",
+      "canonical": "Acetyl L-Carnitine",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Achillea Millefolium",
+      "canonical": "Achillea Millefolium",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Adhatoda Vasica",
+      "canonical": "Adhatoda Vasica",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "African Mango Seed",
+      "canonical": "African Mango Seed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Akarkara",
+      "canonical": "Akarkara",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Alfalfa",
+      "canonical": "Alfalfa",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Aloevera",
+      "canonical": "Aloevera",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Althea Officinalis",
+      "canonical": "Althea Officinalis",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Amla",
+      "canonical": "Amla",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Artichoke",
+      "canonical": "Artichoke",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Ashwagandha (Withania Somnifera)",
+      "canonical": "Ashwagandha (Withania Somnifera)",
+      "category": "herbal_extract",
+      "tags": [
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Asparagus Adscendens",
+      "canonical": "Asparagus Adscendens",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Asparagus Racemosus",
+      "canonical": "Asparagus Racemosus",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Astaxanthin",
+      "canonical": "Astaxanthin",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Avena Sativa (Oat Straw)",
+      "canonical": "Avena Sativa (Oat Straw)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Bacopa Monnieri",
+      "canonical": "Bacopa Monnieri",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "BCAAs",
+      "canonical": "BCAAs",
+      "category": "amino_acid",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "Bee Propolis",
+      "canonical": "Bee Propolis",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Beet Root",
+      "canonical": "Beet Root",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Berberis Aristata",
+      "canonical": "Berberis Aristata",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Beta Carotene",
+      "canonical": "Beta Carotene",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Bilberry",
+      "canonical": "Bilberry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Biotin",
+      "canonical": "Biotin",
+      "category": "vitamin_mineral",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "Black Cohosh",
+      "canonical": "Black Cohosh",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Black Melon",
+      "canonical": "Black Melon",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Black Pepper",
+      "canonical": "Black Pepper",
+      "category": "herbal_extract",
+      "tags": [
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Blessed Thistle",
+      "canonical": "Blessed Thistle",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Boswellia Serrata",
+      "canonical": "Boswellia Serrata",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Bovine Collagen",
+      "canonical": "Bovine Collagen",
+      "category": "nutritional",
+      "tags": []
+    },
+    {
+      "name": "Butter Bur",
+      "canonical": "Butter Bur",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Calcium",
+      "canonical": "Calcium",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Cardamom",
+      "canonical": "Cardamom",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Celery Seed",
+      "canonical": "Celery Seed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Centaurea Cyanus (Corn flower)",
+      "canonical": "Centaurea Cyanus (Corn flower)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chammomile",
+      "canonical": "Chammomile",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chaste Berry",
+      "canonical": "Chaste Berry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chelidonium Majus",
+      "canonical": "Chelidonium Majus",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chicorium Intybus",
+      "canonical": "Chicorium Intybus",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Choline Bitartrate",
+      "canonical": "Choline Bitartrate",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chondroitin Sulfate",
+      "canonical": "Chondroitin Sulfate",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Chromium Picolinate",
+      "canonical": "Chromium Picolinate",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Cinnamon Bark",
+      "canonical": "Cinnamon Bark",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Citrus Bioflavonoids",
+      "canonical": "Citrus Bioflavonoids",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Co enzyme Q10",
+      "canonical": "Co enzyme Q10",
+      "category": "nutritional",
+      "tags": []
+    },
+    {
+      "name": "Coconut milk powder",
+      "canonical": "Coconut milk powder",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Collagen",
+      "canonical": "Collagen",
+      "category": "nutritional",
+      "tags": []
+    },
+    {
+      "name": "Copper",
+      "canonical": "Copper",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Cordia Latifolia",
+      "canonical": "Cordia Latifolia",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Cordyceps",
+      "canonical": "Cordyceps",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Coriandrum Sativum",
+      "canonical": "Coriandrum Sativum",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Cranberry",
+      "canonical": "Cranberry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Crataeva Nurvala",
+      "canonical": "Crataeva Nurvala",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Curcuma Longa (Turmeric)",
+      "canonical": "Curcuma Longa (Turmeric)",
+      "category": "herbal_extract",
+      "tags": [
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "D-Chiro Inositol",
+      "canonical": "D-Chiro Inositol",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "D-Mannose",
+      "canonical": "D-Mannose",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Damiana",
+      "canonical": "Damiana",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Dandelion",
+      "canonical": "Dandelion",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "DHA",
+      "canonical": "DHA",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Digestive enzymes",
+      "canonical": "Digestive enzymes",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "DL-Methionine",
+      "canonical": "DL-Methionine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "Echinacea",
+      "canonical": "Echinacea",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Elderberry",
+      "canonical": "Elderberry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Electrolytes",
+      "canonical": "Electrolytes",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Evening Primrose Powder",
+      "canonical": "Evening Primrose Powder",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Fennel",
+      "canonical": "Fennel",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Feverfew",
+      "canonical": "Feverfew",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Flaxseed",
+      "canonical": "Flaxseed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Garcinia Cambogia",
+      "canonical": "Garcinia Cambogia",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Garlic",
+      "canonical": "Garlic",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Gentiana Lutea",
+      "canonical": "Gentiana Lutea",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Ginger",
+      "canonical": "Ginger",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Gingko Biloba",
+      "canonical": "Gingko Biloba",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted",
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Ginseng",
+      "canonical": "Ginseng",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Glucosamine Sulphate HCL",
+      "canonical": "Glucosamine Sulphate HCL",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Glucosamine Sulphate KCL",
+      "canonical": "Glucosamine Sulphate KCL",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Glycine",
+      "canonical": "Glycine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "Grape Seed",
+      "canonical": "Grape Seed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Green Coffee Bean",
+      "canonical": "Green Coffee Bean",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Green Tea",
+      "canonical": "Green Tea",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Guggul",
+      "canonical": "Guggul",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Gymnema Sylvester",
+      "canonical": "Gymnema Sylvester",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Hawthorn",
+      "canonical": "Hawthorn",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Herba Verbenae",
+      "canonical": "Herba Verbenae",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Hibiscus (Roselle)",
+      "canonical": "Hibiscus (Roselle)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Horny Goat Weed",
+      "canonical": "Horny Goat Weed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Horse Chestnut",
+      "canonical": "Horse Chestnut",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Horse Tail",
+      "canonical": "Horse Tail",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Hyaluronic Acid",
+      "canonical": "Hyaluronic Acid",
+      "category": "nutritional",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "Hydrastis Canadensis",
+      "canonical": "Hydrastis Canadensis",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Iron Bisglycinate",
+      "canonical": "Iron Bisglycinate",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "IVY Leaf",
+      "canonical": "IVY Leaf",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Kelp",
+      "canonical": "Kelp",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "L-Arginine Base",
+      "canonical": "L-Arginine Base",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Arginine HCL",
+      "canonical": "L-Arginine HCL",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Carnitine Base",
+      "canonical": "L-Carnitine Base",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Carnitine Fumarate",
+      "canonical": "L-Carnitine Fumarate",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Carnitine HCL",
+      "canonical": "L-Carnitine HCL",
+      "category": "amino_acid",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "L-Carnitine L Tartrate",
+      "canonical": "L-Carnitine L Tartrate",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Citrulline",
+      "canonical": "L-Citrulline",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Glutamic Acid",
+      "canonical": "L-Glutamic Acid",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Glutamine",
+      "canonical": "L-Glutamine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Glutathione",
+      "canonical": "L-Glutathione",
+      "category": "amino_acid",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "L-Methyl Folate",
+      "canonical": "L-Methyl Folate",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Ornithine L Aspartate",
+      "canonical": "L-Ornithine L Aspartate",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Taurine",
+      "canonical": "L-Taurine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Theanine",
+      "canonical": "L-Theanine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "L-Tyrosine",
+      "canonical": "L-Tyrosine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "Lactase",
+      "canonical": "Lactase",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Lemon Balm",
+      "canonical": "Lemon Balm",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Lemon Grass",
+      "canonical": "Lemon Grass",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Licorice",
+      "canonical": "Licorice",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Lovage Root",
+      "canonical": "Lovage Root",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Lutein",
+      "canonical": "Lutein",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Maca",
+      "canonical": "Maca",
+      "category": "herbal_extract",
+      "tags": [
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Malva Sylvestris",
+      "canonical": "Malva Sylvestris",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Marine Collagen",
+      "canonical": "Marine Collagen",
+      "category": "nutritional",
+      "tags": []
+    },
+    {
+      "name": "Matcha Powder",
+      "canonical": "Matcha Powder",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Melatonin",
+      "canonical": "Melatonin",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Menthae Piperita",
+      "canonical": "Menthae Piperita",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Moringa Oliefera",
+      "canonical": "Moringa Oliefera",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "MSM",
+      "canonical": "MSM",
+      "category": "nutritional",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "Mucuna Prureins",
+      "canonical": "Mucuna Prureins",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Mulberry",
+      "canonical": "Mulberry",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Muria Puama",
+      "canonical": "Muria Puama",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "N-Acetyl L-Cysteine",
+      "canonical": "N-Acetyl L-Cysteine",
+      "category": "amino_acid",
+      "tags": []
+    },
+    {
+      "name": "Nettle Leaf",
+      "canonical": "Nettle Leaf",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Nigella sativa",
+      "canonical": "Nigella sativa",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Nuphur Lutea",
+      "canonical": "Nuphur Lutea",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Ocimum Sanctum (Holy Basil)",
+      "canonical": "Ocimum Sanctum (Holy Basil)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Omega-3 Powder",
+      "canonical": "Omega-3 Powder",
+      "category": "nutritional",
+      "tags": []
+    },
+    {
+      "name": "Onion Bulb",
+      "canonical": "Onion Bulb",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Papaya Leaf",
+      "canonical": "Papaya Leaf",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Passion Flower",
+      "canonical": "Passion Flower",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Pine Bark",
+      "canonical": "Pine Bark",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Pistacia Vera",
+      "canonical": "Pistacia Vera",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Pomegranate",
+      "canonical": "Pomegranate",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Prebiotics",
+      "canonical": "Prebiotics",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Probiotics",
+      "canonical": "Probiotics",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Protein",
+      "canonical": "Protein",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Prune Juice",
+      "canonical": "Prune Juice",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Pumpkin Seed",
+      "canonical": "Pumpkin Seed",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Pygeum Bark",
+      "canonical": "Pygeum Bark",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Quercitin",
+      "canonical": "Quercitin",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Raspberry Extract",
+      "canonical": "Raspberry Extract",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Red Clover",
+      "canonical": "Red Clover",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Red Yeast",
+      "canonical": "Red Yeast",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Rose Hip",
+      "canonical": "Rose Hip",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Rosemary",
+      "canonical": "Rosemary",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Royal Jelly",
+      "canonical": "Royal Jelly",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Rubia Cordifolia",
+      "canonical": "Rubia Cordifolia",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Salvia Officinalis",
+      "canonical": "Salvia Officinalis",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Saw Palmetto",
+      "canonical": "Saw Palmetto",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Senna Leaf",
+      "canonical": "Senna Leaf",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Serratiopeptidase",
+      "canonical": "Serratiopeptidase",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted"
+      ]
+    },
+    {
+      "name": "Shilajit (Asphaltum Punjabianum)",
+      "canonical": "Shilajit (Asphaltum Punjabianum)",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted",
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Silica Bamboo Extract",
+      "canonical": "Silica Bamboo Extract",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Silymarin",
+      "canonical": "Silymarin",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Spirulina",
+      "canonical": "Spirulina",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "St John Wort",
+      "canonical": "St John Wort",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Stevia",
+      "canonical": "Stevia",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted",
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Symplocos Racemosa",
+      "canonical": "Symplocos Racemosa",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Tamarix Gallica",
+      "canonical": "Tamarix Gallica",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Terminalia Arjuna",
+      "canonical": "Terminalia Arjuna",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Terminalia Bellerica",
+      "canonical": "Terminalia Bellerica",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Terminalia Chebula",
+      "canonical": "Terminalia Chebula",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Thyme",
+      "canonical": "Thyme",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Tinospora Cordifolia",
+      "canonical": "Tinospora Cordifolia",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Tomato (Lycopene)",
+      "canonical": "Tomato (Lycopene)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Tongkat Ali",
+      "canonical": "Tongkat Ali",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted",
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Tribulus Terrestris",
+      "canonical": "Tribulus Terrestris",
+      "category": "herbal_extract",
+      "tags": [
+        "highlighted",
+        "seven_in_one_family"
+      ]
+    },
+    {
+      "name": "Trigonella foenum (Fenugreek)",
+      "canonical": "Trigonella foenum (Fenugreek)",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Valerian Root",
+      "canonical": "Valerian Root",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Vitamin A",
+      "canonical": "Vitamin A",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Vitamin B12",
+      "canonical": "Vitamin B12",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Vitamin B6",
+      "canonical": "Vitamin B6",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Vitamin C",
+      "canonical": "Vitamin C",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Vitamin D3",
+      "canonical": "Vitamin D3",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "Vitamin K2",
+      "canonical": "Vitamin K2",
+      "category": "vitamin_mineral",
+      "tags": []
+    },
+    {
+      "name": "White Willow Bark",
+      "canonical": "White Willow Bark",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Witch Hazel",
+      "canonical": "Witch Hazel",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Yohimbine",
+      "canonical": "Yohimbine",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Zeaxanthin",
+      "canonical": "Zeaxanthin",
+      "category": "herbal_extract",
+      "tags": []
+    },
+    {
+      "name": "Zinc",
+      "canonical": "Zinc",
+      "category": "vitamin_mineral",
+      "tags": []
+    }
+  ]
+}

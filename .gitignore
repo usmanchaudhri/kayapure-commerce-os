@@ -43,3 +43,6 @@ backend/.env
 # Log archives
 backend/logs/
 *.log.*
+
+# Ingredient research run artifacts (keep directory via .gitkeep)
+backend/data/ingredient_research_runs/*.json

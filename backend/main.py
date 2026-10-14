@@ -55,6 +55,13 @@ from services.marketing import marketing_service
 from services.logistics import logistics_service
 from services.facebook_ads_client import FacebookAdsClient
 from services.ads_analysis_agent import ads_analysis_agent_service
+from services.ingredient_research import ingredient_research_service
+from services.ingredient_research.schemas import (
+    IngredientCatalogResponse,
+    IngredientComboRequest,
+    ResearchReport,
+    ResearchRunListResponse,
+)
 from services import action_queue
 from services.report_store import list_reports_for_account, report_to_result, save_report
 from services.profit_leak_store import (
@@ -941,6 +948,83 @@ async def get_vm_telemetry():
     if not settings.is_source_enabled("vm"):
         return source_disabled_response("vm")
     return firecracker_manager.get_telemetry()
+
+
+# ============================================
+# Ingredient Research Agent #1 (CAMEL Workforce)
+# ============================================
+@app.get("/api/research/ingredients", response_model=IngredientCatalogResponse)
+async def list_research_ingredients(
+    tag: Optional[str] = Query(default=None, description="Optional catalog tag filter"),
+    limit: Optional[int] = Query(default=None, ge=1, le=500),
+):
+    """List ingredients from the local Kayapure research catalog."""
+    tags = [tag] if tag else None
+    return ingredient_research_service.get_catalog(tags=tags, limit=limit)
+
+
+@app.get("/api/research/status")
+async def ingredient_research_status():
+    """Return configuration readiness for the ingredient research agent."""
+    return {
+        "ready": ingredient_research_service.is_ready,
+        "default_limit": settings.INGREDIENT_RESEARCH_DEFAULT_LIMIT,
+        "max_combos": settings.INGREDIENT_RESEARCH_MAX_COMBOS,
+        "timeout_sec": settings.INGREDIENT_RESEARCH_TIMEOUT_SEC,
+        "model_platform": settings.INGREDIENT_RESEARCH_MODEL_PLATFORM,
+        "model_type": settings.INGREDIENT_RESEARCH_MODEL_TYPE,
+        "ncbi_api_key_configured": bool(settings.NCBI_API_KEY),
+    }
+
+
+@app.post("/api/research/ingredient-combos", response_model=ResearchReport)
+async def research_ingredient_combos(request: IngredientComboRequest):
+    """
+    Run Phase-1 CAMEL Workforce ingredient research.
+
+    Specialists: librarian, evidence_scout, synergy_analyst, claim_guard.
+    Persists JSON artifacts under backend/data/ingredient_research_runs/.
+    """
+    research_logger = get_logger("ingredient_research")
+    research_logger.info(
+        "Ingredient combo research requested",
+        extra={"goal": request.goal, "format": request.format},
+    )
+    if not ingredient_research_service.is_ready:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Ingredient research is not configured. "
+                "Set GOOGLE_API_KEY or LLM_BASE_MODEL_API_KEY."
+            ),
+        )
+    try:
+        return await ingredient_research_service.research_combos(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        research_logger.exception("Ingredient research failed: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ingredient research failed: {exc}",
+        ) from exc
+
+
+@app.get("/api/research/runs", response_model=ResearchRunListResponse)
+async def list_ingredient_research_runs(
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """List persisted ingredient research runs (newest first)."""
+    return ingredient_research_service.list_runs(limit=limit)
+
+
+@app.get("/api/research/runs/{run_id}")
+async def get_ingredient_research_run(run_id: str):
+    """Fetch a persisted ingredient research run by id."""
+    payload = ingredient_research_service.get_run(run_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    return payload
 
 
 # ============================================

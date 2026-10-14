@@ -7,7 +7,9 @@ from shiny_app.handlers import (
     campaigns,
     creative_intelligence,
     daily_diagnosis,
+    dashboard,
     funnel_reconciliation,
+    ingredient_research,
     postex,
     profit_leak_scanner,
     saleor_mcp,
@@ -18,6 +20,7 @@ from shiny_app.handlers import (
 
 def server(input: Inputs, output: Outputs, session: Session) -> None:
     shell.register(input, output, session)
+    dashboard.register(input, output, session)
     campaigns.register(input, output, session)
     profit_leak_scanner.register(input, output, session)
     daily_diagnosis.register(input, output, session)
@@ -26,4 +29,5 @@ def server(input: Inputs, output: Outputs, session: Session) -> None:
     supplement_economics.register(input, output, session)
     ai_reports.register(input, output, session)
     saleor_mcp.register(input, output, session)
+    ingredient_research.register(input, output, session)
     postex.register(input, output, session)

@@ -154,5 +154,32 @@ class Settings:
         "yes",
     )
 
+    # Ingredient research agent (CAMEL Workforce — Agent #1)
+    # Prefer GOOGLE_API_KEY for CAMEL ModelFactory; fall back to LLM_BASE_MODEL_API_KEY.
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "") or os.getenv(
+        "LLM_BASE_MODEL_API_KEY", ""
+    )
+    NCBI_API_KEY: str = os.getenv("NCBI_API_KEY", "")
+    INGREDIENT_RESEARCH_DEFAULT_LIMIT: int = int(
+        os.getenv("INGREDIENT_RESEARCH_DEFAULT_LIMIT", "30")
+    )
+    INGREDIENT_RESEARCH_MAX_COMBOS: int = int(
+        os.getenv("INGREDIENT_RESEARCH_MAX_COMBOS", "5")
+    )
+    INGREDIENT_RESEARCH_TIMEOUT_SEC: int = int(
+        os.getenv("INGREDIENT_RESEARCH_TIMEOUT_SEC", "600")
+    )
+    INGREDIENT_RESEARCH_MODEL_PLATFORM: str = os.getenv(
+        "INGREDIENT_RESEARCH_MODEL_PLATFORM", "gemini"
+    )
+    INGREDIENT_RESEARCH_MODEL_TYPE: str = os.getenv(
+        "INGREDIENT_RESEARCH_MODEL_TYPE", ""
+    ) or os.getenv("LLM_BASE_MODEL", "gemini-2.0-flash")
+
+    @property
+    def ingredient_research_ready(self) -> bool:
+        """Return True when a Gemini/Google API key is available for CAMEL."""
+        return bool(self.GOOGLE_API_KEY or self.LLM_BASE_MODEL_API_KEY)
+
 
 settings = Settings()

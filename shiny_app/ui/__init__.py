@@ -6,7 +6,9 @@ from shiny_app.ui.styles import APP_CSS
 from shiny_app.ui.tabs import ai_reports as ai_reports_tab
 from shiny_app.ui.tabs import creative_intelligence as creative_intel_tab
 from shiny_app.ui.tabs import daily_diagnosis as daily_diagnosis_tab
+from shiny_app.ui.tabs import dashboard as dashboard_tab
 from shiny_app.ui.tabs import funnel_reconciliation as funnel_rec_tab
+from shiny_app.ui.tabs import ingredient_research as ingredient_research_tab
 from shiny_app.ui.tabs import postex as postex_tab
 from shiny_app.ui.tabs import profit_leak_scanner as profit_leak_tab
 from shiny_app.ui.tabs import saleor_mcp as saleor_mcp_tab
@@ -170,8 +172,9 @@ _THEME_AND_NAV_SCRIPT = """
   }
 
   var NAV_ACTIVE_KEY = 'kayapure-ads-active-nav';
-  var DEFAULT_NAV = 'profit_leak_scanner';
+  var DEFAULT_NAV = 'dashboard';
   var NAV_IDS = {
+    dashboard: 'nav_dashboard',
     profit_leak_scanner: 'nav_profit_leak_scanner',
     daily_diagnosis: 'nav_daily_diagnosis',
     creative_intelligence: 'nav_creative_intelligence',
@@ -179,9 +182,11 @@ _THEME_AND_NAV_SCRIPT = """
     supplement_economics: 'nav_supplement_economics',
     ai_reports: 'nav_ai_reports',
     saleor_mcp: 'nav_saleor_mcp',
+    ingredient_research: 'nav_ingredient_research',
     postex: 'nav_postex'
   };
   var NAV_TITLES = {
+    dashboard: 'Dashboard',
     profit_leak_scanner: 'Profit Leak Scanner',
     daily_diagnosis: 'Daily Diagnosis',
     creative_intelligence: 'Creative Intelligence',
@@ -189,9 +194,11 @@ _THEME_AND_NAV_SCRIPT = """
     supplement_economics: 'Unit Economics',
     ai_reports: 'Ads Performance',
     saleor_mcp: 'Saleor MCP',
+    ingredient_research: 'Ingredient Lab',
     postex: 'PostEx'
   };
   var NAV_SUBTITLES = {
+    dashboard: 'Overall ads summary across all accounts',
     profit_leak_scanner: 'Find wasted spend and ranked fixes for supplement ads',
     daily_diagnosis: 'Plain-English account health in five sentences',
     creative_intelligence: 'Message patterns, fatigue, and creative test backlog',
@@ -199,6 +206,7 @@ _THEME_AND_NAV_SCRIPT = """
     supplement_economics: 'First-order CAC, break-even, and LTV contribution',
     ai_reports: 'Generate reports to analyse and improve ad spend',
     saleor_mcp: 'Query products, orders, and stock via Saleor MCP',
+    ingredient_research: 'CAMEL workforce: research ingredients and propose combos',
     postex: 'Create shipments, track orders, CPR receipts, AWB and load sheets'
   };
 
@@ -444,13 +452,15 @@ def _nav_rail():
             ),
             ui.p("Commerce OS", class_="app-nav-kicker"),
             ui.tags.nav(
-                _nav_item("nav_profit_leak_scanner", "profit_leak_scanner", "Profit Leak Scanner", active=True),
+                _nav_item("nav_dashboard", "dashboard", "Dashboard", active=True),
+                _nav_item("nav_profit_leak_scanner", "profit_leak_scanner", "Profit Leak Scanner"),
                 _nav_item("nav_daily_diagnosis", "daily_diagnosis", "Daily Diagnosis"),
                 _nav_item("nav_creative_intelligence", "creative_intelligence", "Creative Intelligence"),
                 _nav_item("nav_funnel_reconciliation", "funnel_reconciliation", "Funnel Reconciliation"),
                 _nav_item("nav_supplement_economics", "supplement_economics", "Unit Economics"),
                 _nav_item("nav_ai_reports", "ai_reports", "Ads Performance"),
                 _nav_item("nav_saleor_mcp", "saleor_mcp", "Saleor MCP"),
+                _nav_item("nav_ingredient_research", "ingredient_research", "Ingredient Lab"),
                 _nav_item("nav_postex", "postex", "PostEx"),
                 class_="app-nav-list",
                 **{"aria-label": "Main"},
@@ -495,12 +505,12 @@ def build_app_ui():
                         ),
                         ui.div(
                             ui.div(
-                                "Profit Leak Scanner",
+                                "Dashboard",
                                 id="app_panel_title",
                                 class_="header-title",
                             ),
                             ui.div(
-                                "Find wasted spend and ranked fixes for supplement ads",
+                                "Overall ads summary across all accounts",
                                 id="app_panel_sub",
                                 class_="header-sub",
                             ),
@@ -524,6 +534,7 @@ def build_app_ui():
                 ),
                 ui.tags.main(
                     ui.navset_hidden(
+                        dashboard_tab.nav_panel(),
                         profit_leak_tab.nav_panel(),
                         daily_diagnosis_tab.nav_panel(),
                         creative_intel_tab.nav_panel(),
@@ -531,9 +542,10 @@ def build_app_ui():
                         supp_econ_tab.nav_panel(),
                         ai_reports_tab.nav_panel(),
                         saleor_mcp_tab.nav_panel(),
+                        ingredient_research_tab.nav_panel(),
                         postex_tab.nav_panel(),
                         id="main_nav",
-                        selected="profit_leak_scanner",
+                        selected="dashboard",
                     ),
                     class_="app-main",
                 ),
